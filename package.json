@@ -16,6 +16,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
+    "test": "npm run test:api",
+    "test:api": "node --test \"test/api/**/*.test.mjs\"",
     "android:sync": "npm run build && cap sync android",
     "android:open": "cap open android",
     "android:run": "npm run build && cap run android"

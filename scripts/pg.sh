@@ -10,6 +10,7 @@ PGDATA="$ROOT/.pgdata"
 PGPORT="${PGPORT:-5434}"
 PGUSER="${PGUSER:-casasigma}"
 PGDATABASE="${PGDATABASE:-casasigma}"
+PGTESTDATABASE="${PGTESTDATABASE:-casasigma_test}"
 PGHOST=127.0.0.1
 
 PGBIN="${PGBIN:-$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)}"
@@ -51,6 +52,13 @@ start() {
 
   psql_db -d "$PGDATABASE" -q -f "$ROOT/db/schema.sql"
   echo "Schema applied to $PGDATABASE"
+
+  # `npm test` runs against this separate database, never the dev one. The API
+  # applies the schema itself when the tests boot it.
+  if [ -z "$(psql_db -d postgres -tAc "select 1 from pg_database where datname = '$PGTESTDATABASE'")" ]; then
+    "$PGBIN/createdb" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" "$PGTESTDATABASE"
+    echo "Created test database $PGTESTDATABASE"
+  fi
 }
 
 stop() {
