@@ -1,0 +1,40 @@
+{
+  "name": "casasigma",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CasaSigma Real Estate - houses to visit and restaurants to book, as a web app and an Android app.",
+  "scripts": {
+    "dev": "vite",
+    "api": "node server/index.mjs",
+    "db:start": "bash scripts/pg.sh start",
+    "db:stop": "bash scripts/pg.sh stop",
+    "db:status": "bash scripts/pg.sh status",
+    "db:seed": "node scripts/seed-media.mjs",
+    "db:seed:users": "node scripts/seed-auth.mjs",
+    "setup": "npm run db:start && npm run db:seed && npm run db:seed:users",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "android:sync": "npm run build && cap sync android",
+    "android:open": "cap open android",
+    "android:run": "npm run build && cap run android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "pg": "^8.13.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.0.0",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@types/pg": "^8.11.10",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  }
+}

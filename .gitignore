@@ -1,0 +1,39 @@
+# dependencies
+node_modules/
+
+# web build output
+dist/
+dist-ssr/
+
+# android build artefacts
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/app/src/main/res/xml/config.xml.bak
+
+# signing material — never commit
+*.jks
+*.keystore
+*.keystore.*
+!android/app/debug.keystore
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# local Postgres cluster (media store)
+.pgdata/
+
+# tooling
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.local
+*.tsbuildinfo
+.DS_Store
+npm-debug.log*

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CasaSigma</string>
+    <string name="title_activity_main">CasaSigma</string>
+    <string name="package_name">app.casasigma.mobile</string>
+    <string name="custom_url_scheme">app.casasigma.mobile</string>
+</resources>
