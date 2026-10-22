@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 // `base: './'` keeps asset URLs relative so the same build works inside the
@@ -22,5 +22,9 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+  },
+  test: {
+    environment: 'jsdom',
+    include: ['test/web/**/*.test.{ts,tsx}'],
   },
 });

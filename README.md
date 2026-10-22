@@ -89,7 +89,8 @@ npm run db:status  # is it running?
 npm run db:seed    # copy public/brand/*.png into the media table
 npm run db:seed:users  # create the demo accounts and the starter admin login
 npm run api        # API (also applies db/schema.sql on boot)
-npm test           # API tests: boots the API on a free port against the casasigma_test database
+npm test           # API tests (boots the API against the casasigma_test database) + web tests
+npm run test:web   # web tests only (Vitest, no database needed)
 ```
 
 `npm test` needs the local cluster running (`npm run db:start` also creates `casasigma_test`). To
@@ -274,6 +275,7 @@ src/
 server/          API (Node http + pg): auth, media, no framework
 scripts/         Local Postgres lifecycle, media and demo-account seeding
 test/api/        API tests (node:test), each file boots its own server
+test/web/        Frontend tests (Vitest + jsdom)
 db/              SQL schema for media, users and sessions
 public/brand/    Logo source files (also served as the offline fallback)
 android/         Generated Capacitor Android project
