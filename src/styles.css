@@ -3104,6 +3104,49 @@ a.topbar__name:hover {
   font-weight: 600;
 }
 
+.sell__requests {
+  gap: 10px;
+}
+
+.sell__request {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 0.82rem;
+}
+
+.sell__request-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sell__request-who {
+  overflow-wrap: anywhere;
+}
+
+.sell__request-note {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.sell__status {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sell__status--Confirmed {
+  color: #33543d;
+}
+
 /* ---------- fresh listings ---------- */
 
 .fresh {

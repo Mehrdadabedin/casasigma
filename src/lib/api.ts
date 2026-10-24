@@ -264,6 +264,16 @@ export const viewingApi = {
     }).then((data) => data.request),
 };
 
+export const sellerViewingApi = {
+  list: () =>
+    request<{ requests: ViewingRequest[] }>('/api/seller/viewings').then((data) => data.requests),
+  answer: (id: string, status: 'Confirmed' | 'Cancelled') =>
+    request<{ request: ViewingRequest }>(`/api/seller/viewings/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }).then((data) => data.request),
+};
+
 export const profileApi = {
   me: () =>
     request<{ profile: Profile | null }>('/api/profile').then((data) => data.profile),
