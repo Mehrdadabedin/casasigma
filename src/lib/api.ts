@@ -216,6 +216,13 @@ export const listingApi = {
     request<{ listing: Listing }>(`/api/listings/${encodeURIComponent(id)}`).then(
       (data) => data.listing,
     ),
+  update: (id: string, input: ListingInput) =>
+    request<{ listing: Listing }>(`/api/listings/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }).then((data) => data.listing),
+  remove: (id: string) =>
+    request<{ ok: true }>(`/api/listings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   /** Store a photo in slot 1–5; replacing a slot deletes the previous file. */
   uploadPhoto: async (id: string, slot: number, blob: Blob): Promise<Listing> => {
     const response = await fetch(

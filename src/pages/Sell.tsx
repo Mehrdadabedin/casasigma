@@ -7,6 +7,9 @@ import { shrinkImage } from '../lib/image';
 import { PinIcon } from '../components/icons';
 import { ApiError, cityApi, listingApi, PHOTO_SLOTS, type Listing } from '../lib/api';
 
+const coverSlug = (listing: Listing) =>
+  [...listing.photos].sort((a, b) => a.slot - b.slot)[0]?.slug;
+
 const kinds = ['House', 'Apartment', 'Loft', 'Villa', 'Restaurant'] as const;
 const SLOTS = Array.from({ length: PHOTO_SLOTS }, (_, index) => index + 1);
 
@@ -167,23 +170,31 @@ function ListingPhotos({
   );
 }
 
-export function Sell() {
-  const { user, ready } = useAuth();
+/** The form card: adds a listing, or edits one the seller already owns. */
+function ListingForm({
+  listing,
+  cities,
+  onSaved,
+  onPhotos,
+  onClose,
+}: {
+  listing: Listing | null;
+  cities: string[];
+  onSaved: (listing: Listing, isNew: boolean) => void;
+  onPhotos: (listing: Listing) => void;
+  onClose: () => void;
+}) {
   const { t } = useI18n();
-
-  const [cities, setCities] = useState<string[]>([]);
-  const [mine, setMine] = useState<Listing[] | null>(null);
-  const [title, setTitle] = useState('');
-  const [kind, setKind] = useState<string>('House');
-  const [city, setCity] = useState('');
-  const [price, setPrice] = useState('');
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState(listing?.title ?? '');
+  const [kind, setKind] = useState<string>(listing?.kind ?? 'House');
+  const [city, setCity] = useState(listing?.city ?? '');
+  const [price, setPrice] = useState(listing?.price !== undefined ? String(listing.price) : '');
+  const [description, setDescription] = useState(listing?.description ?? '');
   const [drafts, setDrafts] = useState<(Draft | null)[]>(Array(PHOTO_SLOTS).fill(null));
   const [error, setError] = useState('');
   const [photoError, setPhotoError] = useState('');
   const [pending, setPending] = useState(false);
   const [uploading, setUploading] = useState<number | null>(null);
-  const [created, setCreated] = useState<Listing | null>(null);
   const draftUrls = useRef(new Set<string>());
 
   // Object URLs for the previews outlive a render, so release them on unmount.
@@ -194,29 +205,6 @@ export function Sell() {
     },
     [],
   );
-
-  const loadCities = () =>
-    cityApi
-      .list()
-      .then((rows) => setCities(rows.map((row) => row.name)))
-      .catch(() => undefined);
-
-  useEffect(() => {
-    if (!user) return;
-    void loadCities();
-    listingApi
-      .mine()
-      .then(setMine)
-      .catch(() => setMine([]));
-  }, [user]);
-
-  if (!ready) {
-    return <p className="page page--narrow admin__loading">{t('admin.loading')}</p>;
-  }
-  if (!user) return <Navigate to="/login?next=/sell" replace />;
-  // Buyers have no studio: an old link (or a demoted account) goes to the
-  // listings they can actually visit instead of a seller-only dead end.
-  if (!user.canSell) return <Navigate to="/homes" replace />;
 
   function pickDraft(slot: number, file: File) {
     if (!file.type.startsWith('image/')) {
@@ -251,19 +239,6 @@ export function Sell() {
     });
   }
 
-  function resetDrafts() {
-    draftUrls.current.forEach((url) => URL.revokeObjectURL(url));
-    draftUrls.current.clear();
-    setDrafts(Array(PHOTO_SLOTS).fill(null));
-  }
-
-  function replaceListing(next: Listing) {
-    setMine((current) =>
-      current ? current.map((row) => (row.id === next.id ? next : row)) : current,
-    );
-    setCreated((current) => (current?.id === next.id ? next : current));
-  }
-
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     const amount = Number.parseInt(price, 10);
@@ -284,27 +259,21 @@ export function Sell() {
     setPhotoError('');
     setPending(true);
 
-    let listing: Listing | null = null;
+    const input = {
+      title: title.trim(),
+      kind,
+      city: city.trim(),
+      price: amount,
+      description: description.trim(),
+    };
     try {
-      listing = await listingApi.create({
-        title: title.trim(),
-        kind,
-        city: city.trim(),
-        price: amount,
-        description: description.trim(),
-      });
-
-      let latest = listing;
-      setCreated(latest);
-      setMine((current) => (current ? [latest, ...current] : [latest]));
-      setTitle('');
-      setPrice('');
-      setDescription('');
-      // The new town may not have been selectable before this listing.
-      void loadCities();
+      let latest = listing
+        ? await listingApi.update(listing.id, input)
+        : await listingApi.create(input);
 
       // Publish first, then attach the chosen photos to their slots. A failed
       // photo leaves the listing live and reports which slot to retry.
+      let failed = false;
       for (const slot of SLOTS) {
         const draft = drafts[slot - 1];
         if (!draft) continue;
@@ -313,13 +282,15 @@ export function Sell() {
           const blob = await shrinkImage(draft.file, 1600);
           latest = await listingApi.uploadPhoto(latest.id, slot, blob);
         } catch {
-          setPhotoError(t('sell.errorPhotoUpload'));
+          failed = true;
         }
       }
-
-      replaceListing(latest);
-      setCreated(latest);
-      resetDrafts();
+      onSaved(latest, !listing);
+      if (failed) {
+        // Stay on the listing in edit mode so the failed slot can be retried.
+        return;
+      }
+      onClose();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : t('sell.errorGeneric'));
     } finally {
@@ -329,132 +300,322 @@ export function Sell() {
   }
 
   return (
+    <form className="sell__form" onSubmit={onSubmit} aria-label={listing ? t('sell.editTitle') : t('sell.formTitle')}>
+      <div className="sell__head">
+        <h2>{listing ? t('sell.editTitle') : t('sell.formTitle')}</h2>
+        <p>{t('sell.formSub')}</p>
+      </div>
+
+      <label className="field">
+        <span>{t('sell.titleField')}</span>
+        <input
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          placeholder={t('sell.titlePlaceholder')}
+          minLength={4}
+          maxLength={120}
+          required
+        />
+      </label>
+
+      <div className="field-row">
+        <label className="field">
+          <span>{t('sell.kind')}</span>
+          <select value={kind} onChange={(event) => setKind(event.target.value)}>
+            {kinds.map((option) => (
+              <option key={option} value={option}>
+                {t(`sell.kind.${option}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>{t('sell.price')}</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            step={1000}
+            value={price}
+            onChange={(event) => setPrice(event.target.value)}
+            placeholder="350000"
+            required
+          />
+        </label>
+      </div>
+
+      <label className="field">
+        <span>{t('sell.city')}</span>
+        <input
+          value={city}
+          onChange={(event) => setCity(event.target.value)}
+          list="sell-cities"
+          placeholder={t('sell.cityPlaceholder')}
+          maxLength={80}
+          required
+        />
+        <datalist id="sell-cities">
+          {cities.map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+      </label>
+      <p className="sell__hint">{t('sell.cityHint')}</p>
+
+      <label className="field">
+        <span>{t('sell.description')}</span>
+        <textarea
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          rows={5}
+          maxLength={2000}
+          placeholder={t('sell.descriptionPlaceholder')}
+        />
+      </label>
+
+      <div className="sell__photos">
+        <p className="sell__photos-title">{t('sell.photosTitle')}</p>
+        <p className="sell__hint">{t('sell.photosSub')}</p>
+        {listing && <ListingPhotos listing={listing} onUpdate={onPhotos} />}
+        {(!listing || drafts.some(Boolean)) && (
+          <PhotoSlotGrid
+            photos={drafts.map((draft) => draft?.url ?? null)}
+            onPick={pickDraft}
+            onClear={clearDraft}
+            busy={uploading}
+            error={photoError}
+          />
+        )}
+      </div>
+
+      {error && (
+        <p className="formerror" role="alert">
+          {error}
+        </p>
+      )}
+
+      <div className="sell__actions">
+        <button className="button" type="submit" disabled={pending}>
+          {uploading
+            ? t('sell.uploadingPhoto', { n: uploading })
+            : pending
+              ? t('sell.submitting')
+              : listing
+                ? t('sell.save')
+                : t('sell.submit')}
+        </button>
+        <button className="button button--ghost" type="button" onClick={onClose} disabled={pending}>
+          {t('sell.cancel')}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** One row of "My listings": cover, title, price, photo count, edit and delete. */
+export function ListingRow({
+  listing,
+  onEdit,
+  onDelete,
+}: {
+  listing: Listing;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { t } = useI18n();
+  const cover = coverSlug(listing);
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <li className="sell__item">
+      <div className="sell__cover">
+        {cover ? (
+          <img src={`api/media/${cover}`} alt="" />
+        ) : (
+          <span>{t('sell.noCover')}</span>
+        )}
+      </div>
+      <div className="sell__item-main">
+        <div className="sell__item-head">
+          <Link className="sell__item-title" to={`/listings/${listing.id}`}>
+            {listing.title}
+          </Link>
+          {listing.price !== undefined && (
+            <span className="sell__price">{formatPrice(listing.price)}</span>
+          )}
+        </div>
+        <span className="sell__place">
+          <PinIcon width={13} height={13} /> {listing.city} · {listing.kind}
+        </span>
+        <span className="sell__count">
+          {t('sell.photoCount', { n: listing.photos.length, max: PHOTO_SLOTS })}
+        </span>
+        <div className="sell__item-actions">
+          {confirming ? (
+            <>
+              <span className="sell__confirm">{t('sell.deleteConfirm')}</span>
+              <button className="button button--small" type="button" onClick={onDelete}>
+                {t('sell.deleteYes')}
+              </button>
+              <button
+                className="button button--ghost button--small"
+                type="button"
+                onClick={() => setConfirming(false)}
+              >
+                {t('sell.cancel')}
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="button button--ghost button--small" type="button" onClick={onEdit}>
+                {t('sell.edit')}
+              </button>
+              <button
+                className="button button--ghost button--small"
+                type="button"
+                onClick={() => setConfirming(true)}
+              >
+                {t('sell.delete')}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/** What a signed-in buyer sees at /sell instead of the dashboard. */
+export function SellerOnly() {
+  const { t } = useI18n();
+  return (
+    <div className="page page--narrow sell">
+      <h1>{t('sell.buyerTitle')}</h1>
+      <p className="sell__sub">{t('sell.buyerBody')}</p>
+      <div className="empty__actions">
+        <Link className="button" to="/signup">
+          {t('sell.buyerSignup')}
+        </Link>
+        <Link className="button button--ghost" to="/homes">
+          {t('sell.browse')}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+export function Sell() {
+  const { user, ready } = useAuth();
+  const { t } = useI18n();
+
+  const [cities, setCities] = useState<string[]>([]);
+  const [mine, setMine] = useState<Listing[] | null>(null);
+  // null = closed, 'new' = add form, otherwise the id of the listing being edited.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Listing | null>(null);
+  const [deleteError, setDeleteError] = useState('');
+
+  const loadCities = () =>
+    cityApi
+      .list()
+      .then((rows) => setCities(rows.map((row) => row.name)))
+      .catch(() => undefined);
+
+  useEffect(() => {
+    if (!user?.canSell) return;
+    void loadCities();
+    listingApi
+      .mine()
+      .then(setMine)
+      .catch(() => setMine([]));
+  }, [user]);
+
+  if (!ready) {
+    return <p className="page page--narrow admin__loading">{t('admin.loading')}</p>;
+  }
+  if (!user) return <Navigate to="/login?next=/sell" replace />;
+  if (!user.canSell) return <SellerOnly />;
+
+  function replaceListing(next: Listing) {
+    setMine((current) =>
+      current ? current.map((row) => (row.id === next.id ? next : row)) : current,
+    );
+  }
+
+  function onSaved(next: Listing, isNew: boolean) {
+    if (isNew) setMine((current) => (current ? [next, ...current] : [next]));
+    else replaceListing(next);
+    setNotice(isNew ? next : null);
+    void loadCities();
+  }
+
+  async function onDelete(listing: Listing) {
+    setDeleteError('');
+    try {
+      await listingApi.remove(listing.id);
+      setMine((current) => (current ? current.filter((row) => row.id !== listing.id) : current));
+      if (editing === listing.id) setEditing(null);
+      setNotice((current) => (current?.id === listing.id ? null : current));
+    } catch (caught) {
+      setDeleteError(caught instanceof ApiError ? caught.message : t('sell.errorDelete'));
+    }
+  }
+
+  const editedListing = editing && editing !== 'new' ? (mine?.find((row) => row.id === editing) ?? null) : null;
+
+  return (
     <div className="page sell">
-      {/* The page is deliberately just form and listings; keep a heading for
-          screen readers without bringing the studio hero back. */}
-      <h1 className="visually-hidden">{t('sell.title')}</h1>
+      <div className="sell__bar">
+        <h1>{t('sell.dashboardTitle')}</h1>
+        {editing === null && (
+          <button
+            className="button"
+            type="button"
+            onClick={() => {
+              setNotice(null);
+              setEditing('new');
+            }}
+          >
+            {t('sell.add')}
+          </button>
+        )}
+      </div>
+
+      {notice && (
+        <div className="sell__created" role="status">
+          <p>{t('sell.created', { title: notice.title, city: notice.city })}</p>
+          <div className="empty__actions">
+            <Link className="button button--ghost button--small" to={`/listings/${notice.id}`}>
+              {t('common.viewListing')}
+            </Link>
+            <Link className="button button--ghost button--small" to="/homes">
+              {t('sell.browse')}
+            </Link>
+          </div>
+        </div>
+      )}
 
       <div className="sell__grid">
-        <form className="sell__form" onSubmit={onSubmit}>
-          <div className="sell__head">
-            <h2>{t('sell.formTitle')}</h2>
-            <p>{t('sell.formSub')}</p>
-          </div>
+        {editing !== null && (
+          <ListingForm
+            key={editing}
+            listing={editedListing}
+            cities={cities}
+            onSaved={onSaved}
+            onPhotos={replaceListing}
+            onClose={() => setEditing(null)}
+          />
+        )}
 
-          <label className="field">
-            <span>{t('sell.titleField')}</span>
-            <input
-              value={title}
-              onChange={(event) => {
-                setTitle(event.target.value);
-                setCreated(null);
-              }}
-              placeholder={t('sell.titlePlaceholder')}
-              minLength={4}
-              maxLength={120}
-              required
-            />
-          </label>
-
-          <div className="field-row">
-            <label className="field">
-              <span>{t('sell.kind')}</span>
-              <select value={kind} onChange={(event) => setKind(event.target.value)}>
-                {kinds.map((option) => (
-                  <option key={option} value={option}>
-                    {t(`sell.kind.${option}`)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>{t('sell.price')}</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                step={1000}
-                value={price}
-                onChange={(event) => setPrice(event.target.value)}
-                placeholder="350000"
-                required
-              />
-            </label>
-          </div>
-
-          <label className="field">
-            <span>{t('sell.city')}</span>
-            <input
-              value={city}
-              onChange={(event) => setCity(event.target.value)}
-              list="sell-cities"
-              placeholder={t('sell.cityPlaceholder')}
-              maxLength={80}
-              required
-            />
-            <datalist id="sell-cities">
-              {cities.map((option) => (
-                <option key={option} value={option} />
-              ))}
-            </datalist>
-          </label>
-          <p className="sell__hint">{t('sell.cityHint')}</p>
-
-          <label className="field">
-            <span>{t('sell.description')}</span>
-            <textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              rows={5}
-              maxLength={2000}
-              placeholder={t('sell.descriptionPlaceholder')}
-            />
-          </label>
-
-          <div className="sell__photos">
-            <p className="sell__photos-title">{t('sell.photosTitle')}</p>
-            <p className="sell__hint">{t('sell.photosSub')}</p>
-            <PhotoSlotGrid
-              photos={drafts.map((draft) => draft?.url ?? null)}
-              onPick={pickDraft}
-              onClear={clearDraft}
-              busy={uploading}
-              error={photoError}
-            />
-          </div>
-
-          {error && (
-            <p className="formerror" role="alert">
-              {error}
-            </p>
-          )}
-
-          <button className="button" type="submit" disabled={pending}>
-            {uploading
-              ? t('sell.uploadingPhoto', { n: uploading })
-              : pending
-                ? t('sell.submitting')
-                : t('sell.submit')}
-          </button>
-
-          {created && (
-            <div className="sell__created" role="status">
-              <p>{t('sell.created', { title: created.title, city: created.city })}</p>
-              <div className="empty__actions">
-                <Link className="button button--ghost button--small" to={`/listings/${created.id}`}>
-                  {t('common.viewListing')}
-                </Link>
-                <Link className="button button--ghost button--small" to="/homes">
-                  {t('sell.browse')}
-                </Link>
-              </div>
-            </div>
-          )}
-        </form>
-
-        <aside className="sell__mine" aria-label={t('sell.myTitle')}>
+        <section className="sell__mine" aria-label={t('sell.myTitle')}>
           <h2>{t('sell.myTitle')}</h2>
           <p className="sell__sub">{t('sell.mySub')}</p>
+
+          {deleteError && (
+            <p className="formerror" role="alert">
+              {deleteError}
+            </p>
+          )}
 
           {mine === null ? (
             <p className="book__hint">{t('admin.loading')}</p>
@@ -463,31 +624,19 @@ export function Sell() {
           ) : (
             <ul className="sell__list">
               {mine.map((listing) => (
-                <li key={listing.id} className="sell__item">
-                  <div className="sell__item-head">
-                    <Link className="sell__item-title" to={`/listings/${listing.id}`}>
-                      {listing.title}
-                    </Link>
-                    {listing.price !== undefined && <span className="sell__price">{formatPrice(listing.price)}</span>}
-                  </div>
-                  <span className="sell__place">
-                    <PinIcon width={13} height={13} /> {listing.city} · {listing.kind}
-                  </span>
-                  <ListingPhotos listing={listing} onUpdate={replaceListing} />
-                </li>
+                <ListingRow
+                  key={listing.id}
+                  listing={listing}
+                  onEdit={() => {
+                    setNotice(null);
+                    setEditing(listing.id);
+                  }}
+                  onDelete={() => void onDelete(listing)}
+                />
               ))}
             </ul>
           )}
-
-          <div className="sell__cities">
-            <p className="sell__cities-title">{t('sell.cityList')}</p>
-            <ul className="chips">
-              {cities.map((option) => (
-                <li key={option}>{option}</li>
-              ))}
-            </ul>
-          </div>
-        </aside>
+        </section>
       </div>
     </div>
   );
