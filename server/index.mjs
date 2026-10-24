@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import {
   createHash,
   randomBytes,
+  randomUUID,
   scrypt as scryptCallback,
   timingSafeEqual,
 } from 'node:crypto';
@@ -48,6 +49,13 @@ const LOGIN_MAX_FAILURES = 5;
 const RESET_WINDOW_MS = 60 * 60 * 1000;
 const RESET_MAX_REQUESTS = 5;
 const RESET_TOKEN_MS = 60 * 60 * 1000;
+
+// Guest viewing requests (MKT4.4): per address and per email, in their own maps.
+const VIEWING_WINDOW_MS = 60 * 60 * 1000;
+const VIEWING_MAX_PER_EMAIL = 5;
+const VIEWING_MAX_PER_IP = 20;
+const viewingByEmail = new Map();
+const viewingByIp = new Map();
 
 const pool = new Pool({ connectionString: DATABASE_URL, max: 4 });
 const loginFailures = new Map();
@@ -293,6 +301,30 @@ function recordFailure(key) {
   if (loginFailures.size > 1000) {
     for (const [candidate, value] of loginFailures) {
       if (Date.now() - value.startedAt > LOGIN_WINDOW_MS) loginFailures.delete(candidate);
+    }
+  }
+}
+
+function windowIsFull(map, key, max) {
+  const entry = map.get(key);
+  if (!entry) return false;
+  if (Date.now() - entry.startedAt > VIEWING_WINDOW_MS) {
+    map.delete(key);
+    return false;
+  }
+  return entry.count >= max;
+}
+
+function windowCount(map, key) {
+  const entry = map.get(key);
+  if (!entry || Date.now() - entry.startedAt > VIEWING_WINDOW_MS) {
+    map.set(key, { count: 1, startedAt: Date.now() });
+  } else {
+    entry.count += 1;
+  }
+  if (map.size > 1000) {
+    for (const [candidate, value] of map) {
+      if (Date.now() - value.startedAt > VIEWING_WINDOW_MS) map.delete(candidate);
     }
   }
 }
@@ -1179,6 +1211,26 @@ async function createViewing(request, response) {
   const body = await readJson(request);
   const session = await findSession(request);
 
+  // Honeypot: people never see this field, so a filled one is a bot. Answer as
+  // if it worked, store nothing, and tell the bot nothing.
+  if (String(body.website ?? '').trim() !== '') {
+    sendJson(response, 201, {
+      request: {
+        id: randomUUID(),
+        listingId: String(body.listingId ?? '').slice(0, 120),
+        listingTitle: String(body.listingTitle ?? '').slice(0, 160),
+        name: String(body.name ?? '').slice(0, 80),
+        email: String(body.email ?? '').slice(0, 254),
+        description: '',
+        date: String(body.date ?? ''),
+        time: String(body.time ?? ''),
+        status: 'Requested',
+        createdAt: new Date().toISOString(),
+      },
+    });
+    return;
+  }
+
   const listingId = String(body.listingId ?? '').trim().slice(0, 120);
   const listingTitle = String(body.listingTitle ?? '').trim().slice(0, 160);
   const name = String(body.name ?? '').trim();
@@ -1210,6 +1262,17 @@ async function createViewing(request, response) {
   if (!TIME.test(time)) {
     sendJson(response, 400, { error: 'Pick a time for the meeting.', field: 'time' });
     return;
+  }
+
+  if (!session) {
+    const ip = clientIp(request);
+    if (windowIsFull(viewingByIp, ip, VIEWING_MAX_PER_IP) || windowIsFull(viewingByEmail, email, VIEWING_MAX_PER_EMAIL)) {
+      response.setHeader('retry-after', String(VIEWING_WINDOW_MS / 1000));
+      sendJson(response, 429, { error: 'Too many requests. Try again later.' });
+      return;
+    }
+    windowCount(viewingByIp, ip);
+    windowCount(viewingByEmail, email);
   }
 
   // The recipient comes from the listing, never from the request body.

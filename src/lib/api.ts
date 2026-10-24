@@ -157,6 +157,8 @@ export interface ViewingInput {
   description: string;
   date: string;
   time: string;
+  /** Honeypot: people never see this field; the server drops a filled one. */
+  website?: string;
 }
 
 export type PhotoStatus = 'none' | 'pending' | 'approved' | 'rejected';
