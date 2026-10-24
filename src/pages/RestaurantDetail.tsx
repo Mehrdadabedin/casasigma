@@ -3,6 +3,7 @@ import { restaurants } from '../data/restaurants';
 import { useAuth } from '../state/AuthProvider';
 import { useI18n } from '../state/LanguageProvider';
 import { Photo } from '../components/Photo';
+import { LockedDetail, useLocked } from '../components/Locked';
 import { Rating } from '../components/cards';
 import { ArrowLeftIcon, PinIcon } from '../components/icons';
 import { formatPrice } from '../lib/format';
@@ -12,6 +13,7 @@ export function RestaurantDetail() {
   const restaurant = restaurants.find((candidate) => candidate.id === id);
   const { user, ready } = useAuth();
   const { t } = useI18n();
+  const locked = useLocked();
 
   if (!restaurant) {
     return (
@@ -22,6 +24,20 @@ export function RestaurantDetail() {
           {t('restaurant.backAll')}
         </Link>
       </div>
+    );
+  }
+
+  // Guests see the photograph blurred out instead of the price, address and
+  // the menu, matching the sign-in wall on the cards.
+  if (locked) {
+    return (
+      <LockedDetail
+        media={
+          <Photo gradient={restaurant.gradient} label={restaurant.name} className="photo--hero" />
+        }
+        backTo="/restaurants"
+        backLabel={t('restaurant.all')}
+      />
     );
   }
 

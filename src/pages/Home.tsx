@@ -1,15 +1,32 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { houses } from '../data/houses';
 import { restaurants } from '../data/restaurants';
 import { HouseCard, RestaurantCard } from '../components/cards';
+import { Avatar } from '../components/Avatar';
 import { ArrowRightIcon, PinIcon } from '../components/icons';
+import { profileApi, type PublicProfile } from '../lib/api';
 import { useI18n } from '../state/LanguageProvider';
 
 export function Home() {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const { t } = useI18n();
+  // Only portraits the admin has approved come back from /api/profiles.
+  const [people, setPeople] = useState<PublicProfile[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    profileApi
+      .public()
+      .then((rows) => {
+        if (alive) setPeople(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   function onSearch(event: FormEvent) {
     event.preventDefault();
@@ -94,6 +111,35 @@ export function Home() {
           ))}
         </div>
       </section>
+
+      {people.length > 0 && (
+        <section className="section">
+          <div className="section__head">
+            <div>
+              <h2>{t('people.title')}</h2>
+              <p>{t('people.sub')}</p>
+            </div>
+          </div>
+          <ul className="people">
+            {people.map((person) => (
+              <li key={`${person.kind}-${person.displayName}`} className="people__card">
+                <Avatar
+                  key={person.photoSlug}
+                  name={person.displayName}
+                  photoSlug={person.photoSlug}
+                  size={64}
+                />
+                <div>
+                  <strong>{person.displayName}</strong>
+                  <span className="people__role">{t(`people.kind.${person.kind}`)}</span>
+                  {person.company && <p className="people__meta">{person.company}</p>}
+                  {person.bio && <p className="people__bio">{person.bio}</p>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="section">
         <div className="how">

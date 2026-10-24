@@ -19,7 +19,8 @@ export function Footer() {
           <h2 className="footer__heading">{t('footer.explore')}</h2>
           <Link to="/homes">{t('nav.homes')}</Link>
           <Link to="/restaurants">{t('nav.restaurants')}</Link>
-          <Link to="/plans">{t('nav.plans')}</Link>
+          <Link to="/book">{t('nav.book')}</Link>
+          <Link to="/profile">{t('profile.link')}</Link>
         </nav>
       </div>
 

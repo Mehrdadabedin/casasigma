@@ -4,6 +4,7 @@ import { houses } from '../data/houses';
 import { useBookings } from '../state/BookingsProvider';
 import { useI18n } from '../state/LanguageProvider';
 import { Photo } from '../components/Photo';
+import { LockedDetail, useLocked } from '../components/Locked';
 import { DayPicker, TimeSlots } from '../components/pickers';
 import { Rating } from '../components/cards';
 import {
@@ -25,6 +26,7 @@ export function HouseDetail() {
   const house = houses.find((candidate) => candidate.id === id);
   const { addVisit, isSlotTaken } = useBookings();
   const { t, locale } = useI18n();
+  const locked = useLocked();
 
   const [day, setDay] = useState(days[0] ?? '');
   const [time, setTime] = useState('');
@@ -48,6 +50,18 @@ export function HouseDetail() {
           {t('house.backAll')}
         </Link>
       </div>
+    );
+  }
+
+  // Guests see the photograph blurred out; the price, address and booking form
+  // stay behind the sign-in wall.
+  if (locked) {
+    return (
+      <LockedDetail
+        media={<Photo gradient={house.gradient} label={house.title} className="photo--hero" />}
+        backTo="/homes"
+        backLabel={t('house.all')}
+      />
     );
   }
 
@@ -201,7 +215,7 @@ export function HouseDetail() {
               <p className="booking__small">
                 {t('house.successBody', { name: house.agent.name })}
               </p>
-              <Link className="button" to="/plans">
+              <Link className="button" to="/book">
                 {t('house.seePlans')}
               </Link>
               <button

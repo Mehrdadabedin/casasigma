@@ -10,6 +10,7 @@ import {
 } from 'node:crypto';
 import { promisify } from 'node:util';
 import pg from 'pg';
+import { mailConfigured, sendPasswordResetEmail } from './mail.mjs';
 
 const { Pool } = pg;
 const scrypt = promisify(scryptCallback);
@@ -39,8 +40,16 @@ const COOKIE_SECURE = process.env.COOKIE_SECURE === '1';
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_FAILURES = 5;
 
+// A reset request mails real email, so it is throttled harder than sign-in and
+// kept in its own map: a locked-out login must not block a reset, or the other
+// way round.
+const RESET_WINDOW_MS = 60 * 60 * 1000;
+const RESET_MAX_REQUESTS = 5;
+const RESET_TOKEN_MS = 60 * 60 * 1000;
+
 const pool = new Pool({ connectionString: DATABASE_URL, max: 4 });
 const loginFailures = new Map();
+const resetRequests = new Map();
 
 function sendJson(response, status, body) {
   const payload = JSON.stringify(body);
@@ -286,6 +295,50 @@ function recordFailure(key) {
   }
 }
 
+function isResetThrottled(key) {
+  const entry = resetRequests.get(key);
+  if (!entry) return false;
+  if (Date.now() - entry.startedAt > RESET_WINDOW_MS) {
+    resetRequests.delete(key);
+    return false;
+  }
+  return entry.count >= RESET_MAX_REQUESTS;
+}
+
+function recordResetRequest(key) {
+  const entry = resetRequests.get(key);
+  if (!entry || Date.now() - entry.startedAt > RESET_WINDOW_MS) {
+    resetRequests.set(key, { count: 1, startedAt: Date.now() });
+  } else {
+    entry.count += 1;
+  }
+  if (resetRequests.size > 1000) {
+    for (const [candidate, value] of resetRequests) {
+      if (Date.now() - value.startedAt > RESET_WINDOW_MS) resetRequests.delete(candidate);
+    }
+  }
+}
+
+/**
+ * Where the reset link points. The browser's Origin is the page the person is
+ * actually on (Vite dev serves :5173 while the API answers on :8787), so it is
+ * preferred; APP_ORIGIN covers server-side callers such as curl.
+ */
+function appOrigin(request) {
+  const configured = String(process.env.APP_ORIGIN ?? '').replace(/\/+$/, '');
+  if (configured) return configured;
+  const origin = request.headers.origin;
+  if (origin) {
+    try {
+      return new URL(origin).origin;
+    } catch {
+      // fall through to the request host
+    }
+  }
+  const host = String(request.headers['x-forwarded-host'] ?? request.headers.host ?? '');
+  return host ? `http://${host}` : 'http://localhost:5173';
+}
+
 async function signup(request, response) {
   if (rejectCrossOrigin(request, response)) return;
   const body = await readJson(request);
@@ -391,6 +444,118 @@ async function login(request, response) {
   loginFailures.delete(key);
   await startSession(request, response, row.id);
   sendJson(response, 200, { user: publicUser(row) });
+}
+
+/**
+ * Send a single-use reset link. Always answers `202` for a well-formed address,
+ * whether or not it belongs to an account, so the form cannot be used to find
+ * out who has signed up. Suspended accounts are skipped silently.
+ */
+async function forgotPassword(request, response) {
+  if (rejectCrossOrigin(request, response)) return;
+  const body = await readJson(request);
+  const email = String(body.email ?? '').trim().toLowerCase();
+
+  if (!EMAIL.test(email) || email.length > 254) {
+    sendJson(response, 400, { error: 'Enter a valid email address.', field: 'email' });
+    return;
+  }
+
+  const key = `${clientIp(request)}|reset`;
+  if (isResetThrottled(key)) {
+    response.setHeader('retry-after', '3600');
+    sendJson(response, 429, { error: 'Too many reset requests. Try again later.' });
+    return;
+  }
+  recordResetRequest(key);
+
+  const { rows } = await pool.query(
+    `select id, email, name
+       from users
+      where lower(email) = lower($1) and suspended_at is null`,
+    [email],
+  );
+  const user = rows[0];
+
+  if (user) {
+    const token = randomBytes(32).toString('base64url');
+    // One live link at a time: asking again retires the previous email.
+    await pool.query('delete from password_resets where user_id = $1 and used_at is null', [
+      user.id,
+    ]);
+    await pool.query(
+      `insert into password_resets (user_id, token_hash, expires_at)
+       values ($1, $2, now() + ($3 || ' milliseconds')::interval)`,
+      [user.id, tokenHash(token), String(RESET_TOKEN_MS)],
+    );
+
+    const resetUrl = `${appOrigin(request)}/#/reset?token=${encodeURIComponent(token)}`;
+    if (mailConfigured()) {
+      try {
+        await sendPasswordResetEmail({ to: user.email, name: user.name, resetUrl });
+      } catch (error) {
+        // A mail outage must not turn into a different answer for a real
+        // address; log it and let the person ask again.
+        console.error(`password reset email to ${user.email} failed: ${error.message}`);
+      }
+    } else {
+      console.log(`[mail not configured] password reset for ${user.email}: ${resetUrl}`);
+    }
+  }
+
+  sendJson(response, 202, { ok: true });
+}
+
+/** Redeem a reset link: replace the password and sign every device out. */
+async function resetPassword(request, response) {
+  if (rejectCrossOrigin(request, response)) return;
+  const body = await readJson(request);
+  const token = String(body.token ?? '').trim();
+  const password = String(body.password ?? '');
+
+  if (password.length < 10 || password.length > 200) {
+    sendJson(response, 400, {
+      error: 'Use a password of at least 10 characters.',
+      field: 'password',
+    });
+    return;
+  }
+
+  const invalid = () =>
+    sendJson(response, 400, {
+      error: 'This reset link has expired or was already used.',
+      field: 'token',
+    });
+
+  if (!token || token.length > 200) {
+    invalid();
+    return;
+  }
+
+  const { rows } = await pool.query(
+    `select id, user_id
+       from password_resets
+      where token_hash = $1 and used_at is null and expires_at > now()`,
+    [tokenHash(token)],
+  );
+  const row = rows[0];
+  if (!row) {
+    invalid();
+    return;
+  }
+
+  const passwordHash = await hashPassword(password);
+  await pool.query(
+    `update users
+        set password_hash = $1, must_set_password = false, updated_at = now()
+      where id = $2`,
+    [passwordHash, row.user_id],
+  );
+  await pool.query('update password_resets set used_at = now() where id = $1', [row.id]);
+  // Anyone holding the old password loses their session too.
+  await pool.query('delete from sessions where user_id = $1', [row.user_id]);
+
+  sendJson(response, 200, { ok: true });
 }
 
 /**
@@ -633,6 +798,593 @@ async function deleteUser(userId, response, admin) {
   sendJson(response, 200, { deleted: userId, email: target.email });
 }
 
+/** Towns for the city filter, with how many published listings each has. */
+async function listCities(response) {
+  const { rows } = await pool.query(
+    `select c.id, c.name, count(l.id)::int as listings
+       from cities c
+       left join listings l on lower(l.city) = lower(c.name)
+      group by c.id, c.name
+      order by c.name asc`,
+  );
+  sendJson(response, 200, { cities: rows });
+}
+
+function publicListing(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    kind: row.kind,
+    city: row.city,
+    price: row.price,
+    description: row.description,
+    sellerName: row.seller_name ?? null,
+    // `{ slot, slug }` per photo so a removed middle slot never makes slot 4
+    // look like slot 3. Ordered by slot; empty until the seller uploads one.
+    photos: Array.isArray(row.photos) ? row.photos : [],
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Listing columns plus the ordered photo slugs. `array(...)` keeps slots in
+ * position order and still yields an empty array when nothing is uploaded.
+ */
+const LISTING_SELECT = `l.*, u.name as seller_name,
+  coalesce((select json_agg(json_build_object('slot', lp.position, 'slug', lp.media_slug)
+                            order by lp.position)
+              from listing_photos lp
+             where lp.listing_id = l.id), '[]'::json) as photos`;
+
+const LISTING_KINDS = new Set(['Apartment', 'House', 'Loft', 'Villa', 'Restaurant']);
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+async function createListing(request, response) {
+  const user = await currentUser(request, response);
+  if (!user) return;
+  if (!user.canSell) {
+    sendJson(response, 403, { error: 'selling permission is not enabled for this account' });
+    return;
+  }
+
+  const body = await readJson(request);
+  const title = String(body.title ?? '').trim();
+  const kind = String(body.kind ?? '').trim();
+  // Town names are stored as typed, minus surrounding space, so "nerja" and
+  // "Nerja" are the same city thanks to the lower(name) index.
+  const city = String(body.city ?? '').trim().replace(/\s+/g, ' ');
+  const price = Number(body.price);
+  const description = String(body.description ?? '').trim();
+
+  if (title.length < 4 || title.length > 120) {
+    sendJson(response, 400, { error: 'Give the listing a title (4–120 characters).', field: 'title' });
+    return;
+  }
+  if (!LISTING_KINDS.has(kind)) {
+    sendJson(response, 400, { error: 'Choose what kind of listing this is.', field: 'kind' });
+    return;
+  }
+  if (city.length < 2 || city.length > 80) {
+    sendJson(response, 400, { error: 'Enter the town or city (2–80 characters).', field: 'city' });
+    return;
+  }
+  if (!Number.isInteger(price) || price < 0 || price > 100_000_000) {
+    sendJson(response, 400, { error: 'Enter the asking price as a whole number of euros.', field: 'price' });
+    return;
+  }
+  if (description.length > 2000) {
+    sendJson(response, 400, { error: 'Keep the description under 2000 characters.', field: 'description' });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    // The town is registered first: a new city becomes selectable for everyone
+    // the moment a seller lists in it.
+    await client.query(
+      'insert into cities (name) values ($1) on conflict (lower(name)) do nothing',
+      [city],
+    );
+    const { rows } = await client.query(
+      `insert into listings (seller_id, title, kind, city, price, description)
+       values ($1, $2, $3, $4, $5, $6)
+       returning id, title, kind, city, price, description, created_at`,
+      [user.id, title, kind, city, price, description],
+    );
+    await client.query('commit');
+    sendJson(response, 201, {
+      listing: publicListing({ ...rows[0], seller_name: user.name, photos: [] }),
+    });
+  } catch (error) {
+    await client.query('rollback').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function listListings(request, response, url) {
+  const mine = url.searchParams.get('mine') === '1';
+  const session = await findSession(request);
+  if (mine && !session) {
+    sendJson(response, 401, { error: 'not signed in' });
+    return;
+  }
+
+  const { rows } = mine
+    ? await pool.query(
+        `select ${LISTING_SELECT}
+           from listings l left join users u on u.id = l.seller_id
+          where l.seller_id = $1
+          order by l.created_at desc limit 200`,
+        [session.user.id],
+      )
+    : await pool.query(
+        `select ${LISTING_SELECT}
+           from listings l left join users u on u.id = l.seller_id
+          where u.suspended_at is null or u.id is null
+          order by l.created_at desc limit 200`,
+      );
+
+  sendJson(response, 200, { listings: rows.map(publicListing) });
+}
+
+/** One published listing, with its photos, for the public detail page. */
+async function getListing(listingId, response) {
+  if (!UUID.test(listingId)) {
+    sendJson(response, 400, { error: 'invalid listing id' });
+    return;
+  }
+  const { rows } = await pool.query(
+    `select ${LISTING_SELECT}
+       from listings l left join users u on u.id = l.seller_id
+      where l.id = $1 and (u.suspended_at is null or u.id is null)`,
+    [listingId],
+  );
+  if (!rows[0]) {
+    sendJson(response, 404, { error: 'no such listing' });
+    return;
+  }
+  sendJson(response, 200, { listing: publicListing(rows[0]) });
+}
+
+/** Load a listing and make sure the caller owns it; writes the error itself. */
+async function ownedListing(listingId, user, response) {
+  if (!UUID.test(listingId)) {
+    sendJson(response, 400, { error: 'invalid listing id' });
+    return null;
+  }
+  const { rows } = await pool.query(
+    `select ${LISTING_SELECT}
+       from listings l left join users u on u.id = l.seller_id
+      where l.id = $1`,
+    [listingId],
+  );
+  const row = rows[0];
+  if (!row) {
+    sendJson(response, 404, { error: 'no such listing' });
+    return null;
+  }
+  if (row.seller_id !== user.id) {
+    sendJson(response, 403, { error: 'this listing belongs to another account' });
+    return null;
+  }
+  return row;
+}
+
+async function reloadListing(listingId) {
+  const { rows } = await pool.query(
+    `select ${LISTING_SELECT}
+       from listings l left join users u on u.id = l.seller_id
+      where l.id = $1`,
+    [listingId],
+  );
+  return rows[0] ? publicListing(rows[0]) : null;
+}
+
+/**
+ * Store one of the four listing photos and point its slot at the new file. The
+ * old slug in that slot is deleted afterwards, so a replacement leaves no
+ * orphaned bytes in `media`.
+ */
+async function uploadListingPhoto(listingId, request, response, url) {
+  const user = await currentUser(request, response);
+  if (!user) return;
+  if (!user.canSell) {
+    sendJson(response, 403, { error: 'selling permission is not enabled for this account' });
+    return;
+  }
+
+  const slot = Number(url.searchParams.get('slot'));
+  if (!Number.isInteger(slot) || slot < 1 || slot > 4) {
+    sendJson(response, 400, { error: 'slot must be 1, 2, 3 or 4', field: 'slot' });
+    return;
+  }
+
+  const row = await ownedListing(listingId, user, response);
+  if (!row) return;
+
+  const mime = (request.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+  if (!MIME_TYPES.has(mime)) {
+    sendJson(response, 415, { error: 'unsupported media type', allowed: [...MIME_TYPES] });
+    return;
+  }
+  const bytes = await readBody(request);
+  if (bytes.length === 0) {
+    sendJson(response, 400, { error: 'empty body' });
+    return;
+  }
+
+  const slug = `listing-${randomBytes(8).toString('hex')}`;
+  const previous = row.photos.find((photo) => photo.slot === slot)?.slug ?? null;
+
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query('insert into media (slug, mime, bytes) values ($1, $2, $3)', [
+      slug,
+      mime,
+      bytes,
+    ]);
+    await client.query(
+      `insert into listing_photos (listing_id, media_slug, position)
+       values ($1, $2, $3)
+       on conflict (listing_id, position) do update
+          set media_slug = excluded.media_slug, created_at = now()`,
+      [row.id, slug, slot],
+    );
+    await client.query('commit');
+  } catch (error) {
+    await client.query('rollback').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  if (previous && previous !== slug) {
+    await pool.query('delete from media where slug = $1', [previous]);
+  }
+
+  sendJson(response, 200, { listing: await reloadListing(row.id) });
+}
+
+async function removeListingPhoto(listingId, slot, request, response) {
+  const user = await currentUser(request, response);
+  if (!user) return;
+
+  const position = Number(slot);
+  if (!Number.isInteger(position) || position < 1 || position > 4) {
+    sendJson(response, 400, { error: 'slot must be 1, 2, 3 or 4', field: 'slot' });
+    return;
+  }
+
+  const row = await ownedListing(listingId, user, response);
+  if (!row) return;
+
+  const { rows } = await pool.query(
+    `delete from listing_photos where listing_id = $1 and position = $2
+      returning media_slug`,
+    [row.id, position],
+  );
+  if (!rows[0]) {
+    sendJson(response, 404, { error: 'no photo in that slot' });
+    return;
+  }
+  await pool.query('delete from media where slug = $1', [rows[0].media_slug]);
+  sendJson(response, 200, { listing: await reloadListing(row.id) });
+}
+
+// `visit_date` is cast to text: pg turns a date into a JS Date at local
+// midnight, and toISOString() would shift the day west of UTC.
+const VIEWING_COLUMNS =
+  'id, user_id, listing_id, listing_title, name, email, description, visit_date::text as visit_date, visit_time, status, created_at';
+
+function publicViewing(row) {
+  return {
+    id: row.id,
+    listingId: row.listing_id,
+    listingTitle: row.listing_title,
+    name: row.name,
+    email: row.email,
+    description: row.description,
+    date: row.visit_date,
+    time: row.visit_time,
+    status: row.status,
+    createdAt: row.created_at,
+  };
+}
+
+/** Contact + calendar request from /book. Guests may send one; it just stays unowned. */
+async function createViewing(request, response) {
+  const body = await readJson(request);
+  const session = await findSession(request);
+
+  const listingId = String(body.listingId ?? '').trim().slice(0, 120);
+  const listingTitle = String(body.listingTitle ?? '').trim().slice(0, 160);
+  const name = String(body.name ?? '').trim();
+  const email = String(body.email ?? '').trim().toLowerCase();
+  const description = String(body.description ?? '').trim();
+  const date = String(body.date ?? '').trim();
+  const time = String(body.time ?? '').trim();
+
+  if (!listingId || !listingTitle) {
+    sendJson(response, 400, { error: 'Choose the listing you want to see.', field: 'listing' });
+    return;
+  }
+  if (name.length < 2 || name.length > 80) {
+    sendJson(response, 400, { error: 'Enter your name (2–80 characters).', field: 'name' });
+    return;
+  }
+  if (!EMAIL.test(email) || email.length > 254) {
+    sendJson(response, 400, { error: 'Enter a valid email address.', field: 'email' });
+    return;
+  }
+  if (description.length > 2000) {
+    sendJson(response, 400, { error: 'Keep the message under 2000 characters.', field: 'description' });
+    return;
+  }
+  if (!DATE.test(date) || Number.isNaN(new Date(`${date}T12:00:00`).getTime())) {
+    sendJson(response, 400, { error: 'Pick a day for the meeting.', field: 'date' });
+    return;
+  }
+  if (!TIME.test(time)) {
+    sendJson(response, 400, { error: 'Pick a time for the meeting.', field: 'time' });
+    return;
+  }
+
+  const { rows } = await pool.query(
+    `insert into viewing_requests
+       (user_id, listing_id, listing_title, name, email, description, visit_date, visit_time)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)
+     returning ${VIEWING_COLUMNS}`,
+    [session?.user.id ?? null, listingId, listingTitle, name, email, description, date, time],
+  );
+  sendJson(response, 201, { request: publicViewing(rows[0]) });
+}
+
+async function listViewings(request, response) {
+  const user = await currentUser(request, response);
+  if (!user) return;
+
+  const { rows } = await pool.query(
+    `select ${VIEWING_COLUMNS} from viewing_requests
+      where user_id = $1
+      order by visit_date asc, visit_time asc, created_at desc
+      limit 200`,
+    [user.id],
+  );
+  sendJson(response, 200, { requests: rows.map(publicViewing) });
+}
+
+async function cancelViewing(requestId, request, response) {
+  if (!UUID.test(requestId)) {
+    sendJson(response, 400, { error: 'invalid request id' });
+    return;
+  }
+  const body = await readJson(request);
+  if (body.status !== 'Cancelled') {
+    sendJson(response, 400, { error: 'Only cancelling a request is supported.', field: 'status' });
+    return;
+  }
+  const user = await currentUser(request, response);
+  if (!user) return;
+
+  const { rows } = await pool.query(
+    `update viewing_requests set status = 'Cancelled'
+      where id = $1 and user_id = $2
+      returning ${VIEWING_COLUMNS}`,
+    [requestId, user.id],
+  );
+  if (!rows[0]) {
+    sendJson(response, 404, { error: 'no such viewing request' });
+    return;
+  }
+  sendJson(response, 200, { request: publicViewing(rows[0]) });
+}
+
+function publicProfile(row, { owner = false } = {}) {
+  const visible = owner || row.photo_status === 'approved';
+  return {
+    id: row.id,
+    kind: row.kind,
+    displayName: row.display_name,
+    phone: row.phone,
+    company: row.company,
+    lookingFor: row.looking_for,
+    bio: row.bio,
+    // The slug reaches the browser for the owner (so they can see their own
+    // submission) and for everyone else only once it is approved.
+    photoSlug: visible ? row.photo_slug ?? null : null,
+    photoStatus: row.photo_status,
+    submittedAt: row.submitted_at,
+    reviewedAt: row.reviewed_at,
+  };
+}
+
+function profileKind(user) {
+  return user.role === 'seller' ? 'seller' : user.role === 'buyer' ? 'buyer' : null;
+}
+
+async function getProfile(request, response) {
+  const user = await currentUser(request, response);
+  if (!user) return;
+  const { rows } = await pool.query('select * from profiles where user_id = $1', [user.id]);
+  sendJson(response, 200, { profile: rows[0] ? publicProfile(rows[0], { owner: true }) : null });
+}
+
+async function saveProfile(request, response) {
+  const user = await currentUser(request, response);
+  if (!user) return;
+  const kind = profileKind(user);
+  if (!kind) {
+    sendJson(response, 400, { error: 'Admin accounts do not have a public profile.' });
+    return;
+  }
+
+  const body = await readJson(request);
+  const displayName = String(body.displayName ?? '').trim();
+  const phone = body.phone == null ? null : String(body.phone).trim().slice(0, 40) || null;
+  const company = body.company == null ? null : String(body.company).trim().slice(0, 120) || null;
+  const lookingFor =
+    body.lookingFor == null ? null : String(body.lookingFor).trim().slice(0, 160) || null;
+  const bio = body.bio == null ? null : String(body.bio).trim().slice(0, 600) || null;
+
+  if (displayName.length < 2 || displayName.length > 80) {
+    sendJson(response, 400, { error: 'Enter a display name (2–80 characters).', field: 'displayName' });
+    return;
+  }
+
+  const { rows } = await pool.query(
+    `insert into profiles (user_id, kind, display_name, phone, company, looking_for, bio)
+     values ($1, $2, $3, $4, $5, $6, $7)
+     on conflict (user_id) do update
+        set kind = excluded.kind,
+            display_name = excluded.display_name,
+            phone = excluded.phone,
+            company = excluded.company,
+            looking_for = excluded.looking_for,
+            bio = excluded.bio,
+            updated_at = now()
+      returning *`,
+    [user.id, kind, displayName, phone, company, lookingFor, bio],
+  );
+  sendJson(response, 200, { profile: publicProfile(rows[0], { owner: true }) });
+}
+
+/**
+ * Store a profile photo in `media` and park it on the admin queue. The slug is
+ * random so a re-upload cannot be guessed from the account, and the old row is
+ * dropped after the new one is attached.
+ */
+async function uploadProfilePhoto(request, response) {
+  const user = await currentUser(request, response);
+  if (!user) return;
+  const kind = profileKind(user);
+  if (!kind) {
+    sendJson(response, 400, { error: 'Admin accounts do not have a public profile.' });
+    return;
+  }
+
+  const mime = (request.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+  if (!MIME_TYPES.has(mime)) {
+    sendJson(response, 415, { error: 'unsupported media type', allowed: [...MIME_TYPES] });
+    return;
+  }
+
+  const bytes = await readBody(request);
+  if (bytes.length === 0) {
+    sendJson(response, 400, { error: 'empty body' });
+    return;
+  }
+
+  const { rows: existing } = await pool.query(
+    'select photo_slug from profiles where user_id = $1',
+    [user.id],
+  );
+  const previousSlug = existing[0]?.photo_slug ?? null;
+
+  const slug = `profile-${randomBytes(8).toString('hex')}`;
+  await pool.query('insert into media (slug, mime, bytes) values ($1, $2, $3)', [
+    slug,
+    mime,
+    bytes,
+  ]);
+
+  const { rows } = await pool.query(
+    `insert into profiles (user_id, kind, display_name, photo_slug, photo_status, submitted_at)
+     values ($1, $2, $3, $4, 'pending', now())
+     on conflict (user_id) do update
+        set photo_slug = excluded.photo_slug,
+            photo_status = 'pending',
+            submitted_at = now(),
+            reviewed_at = null,
+            reviewed_by = null,
+            updated_at = now()
+      returning *`,
+    [user.id, kind, user.name.slice(0, 80), slug],
+  );
+
+  // Drop the superseded file once the new one is attached; a rejected photo is
+  // replaced the same way, so the queue never shows two portraits per account.
+  if (previousSlug && previousSlug !== slug) {
+    await pool.query('delete from media where slug = $1', [previousSlug]);
+  }
+
+  sendJson(response, 200, { profile: publicProfile(rows[0], { owner: true }) });
+}
+
+/** Approved profiles for the public people strip. */
+async function listPublicProfiles(response) {
+  const { rows } = await pool.query(
+    `select p.*
+       from profiles p
+       join users u on u.id = p.user_id
+      where p.photo_status = 'approved' and p.photo_slug is not null
+        and u.suspended_at is null
+      order by p.reviewed_at desc nulls last
+      limit 12`,
+  );
+  sendJson(response, 200, {
+    profiles: rows.map((row) => ({
+      kind: row.kind,
+      displayName: row.display_name,
+      company: row.company,
+      bio: row.bio,
+      photoSlug: row.photo_slug,
+    })),
+  });
+}
+
+async function listPhotoQueue(response) {
+  const { rows } = await pool.query(
+    `select p.*, u.email as account_email, u.role as account_role
+       from profiles p
+       join users u on u.id = p.user_id
+      where p.photo_slug is not null
+      order by (p.photo_status = 'pending') desc, p.submitted_at desc nulls last
+      limit 200`,
+  );
+  sendJson(response, 200, {
+    photos: rows.map((row) => ({
+      ...publicProfile(row),
+      accountEmail: row.account_email,
+      accountRole: row.account_role,
+      photoSlug: row.photo_slug,
+    })),
+  });
+}
+
+async function reviewPhoto(profileId, request, response, admin) {
+  if (!UUID.test(profileId)) {
+    sendJson(response, 400, { error: 'invalid profile id' });
+    return;
+  }
+  const body = await readJson(request);
+  const status = String(body.status ?? '');
+  if (status !== 'approved' && status !== 'rejected') {
+    sendJson(response, 400, { error: 'status must be approved or rejected', field: 'status' });
+    return;
+  }
+
+  const { rows } = await pool.query(
+    `update profiles
+        set photo_status = $1, reviewed_at = now(), reviewed_by = $2, updated_at = now()
+      where id = $3 and photo_slug is not null
+      returning *`,
+    [status, admin.id, profileId],
+  );
+  const row = rows[0];
+  if (!row) {
+    sendJson(response, 404, { error: 'no such photo' });
+    return;
+  }
+  sendJson(response, 200, {
+    photo: { ...publicProfile(row), photoSlug: row.photo_slug },
+  });
+}
+
 async function route(request, response) {
   const url = new URL(request.url ?? '/', 'http://localhost');
   const { pathname } = url;
@@ -653,6 +1405,16 @@ async function route(request, response) {
 
   if (pathname === '/api/auth/login' && method === 'POST') {
     await login(request, response);
+    return;
+  }
+
+  if (pathname === '/api/auth/forgot' && method === 'POST') {
+    await forgotPassword(request, response);
+    return;
+  }
+
+  if (pathname === '/api/auth/reset' && method === 'POST') {
+    await resetPassword(request, response);
     return;
   }
 
@@ -699,6 +1461,106 @@ async function route(request, response) {
     return;
   }
 
+  if (pathname === '/api/cities' && method === 'GET') {
+    await listCities(response);
+    return;
+  }
+
+  // Seller listings are not public: the marketplace is for signed-in accounts,
+  // so guests get 401 here and a sign-in prompt in the UI.
+  if (pathname === '/api/listings' && method === 'GET') {
+    if (!(await currentUser(request, response))) return;
+    await listListings(request, response, url);
+    return;
+  }
+
+  if (pathname === '/api/listings' && method === 'POST') {
+    if (rejectCrossOrigin(request, response)) return;
+    await createListing(request, response);
+    return;
+  }
+
+  const listingMatch = pathname.match(/^\/api\/listings\/([^/]+)$/);
+  if (listingMatch && method === 'GET') {
+    if (!(await currentUser(request, response))) return;
+    await getListing(decodeURIComponent(listingMatch[1]), response);
+    return;
+  }
+
+  const listingPhotosMatch = pathname.match(/^\/api\/listings\/([^/]+)\/photos$/);
+  if (listingPhotosMatch && method === 'POST') {
+    if (rejectCrossOrigin(request, response)) return;
+    await uploadListingPhoto(decodeURIComponent(listingPhotosMatch[1]), request, response, url);
+    return;
+  }
+
+  const listingPhotoMatch = pathname.match(/^\/api\/listings\/([^/]+)\/photos\/([^/]+)$/);
+  if (listingPhotoMatch && method === 'DELETE') {
+    if (rejectCrossOrigin(request, response)) return;
+    await removeListingPhoto(
+      decodeURIComponent(listingPhotoMatch[1]),
+      decodeURIComponent(listingPhotoMatch[2]),
+      request,
+      response,
+    );
+    return;
+  }
+
+  if (pathname === '/api/viewings' && method === 'GET') {
+    await listViewings(request, response);
+    return;
+  }
+
+  if (pathname === '/api/viewings' && method === 'POST') {
+    if (rejectCrossOrigin(request, response)) return;
+    await createViewing(request, response);
+    return;
+  }
+
+  const viewingMatch = pathname.match(/^\/api\/viewings\/([^/]+)$/);
+  if (viewingMatch && method === 'PATCH') {
+    if (rejectCrossOrigin(request, response)) return;
+    await cancelViewing(decodeURIComponent(viewingMatch[1]), request, response);
+    return;
+  }
+
+  if (pathname === '/api/profile' && method === 'GET') {
+    await getProfile(request, response);
+    return;
+  }
+
+  if (pathname === '/api/profile' && method === 'PUT') {
+    if (rejectCrossOrigin(request, response)) return;
+    await saveProfile(request, response);
+    return;
+  }
+
+  if (pathname === '/api/profile/photo' && method === 'POST') {
+    if (rejectCrossOrigin(request, response)) return;
+    await uploadProfilePhoto(request, response);
+    return;
+  }
+
+  if (pathname === '/api/profiles' && method === 'GET') {
+    await listPublicProfiles(response);
+    return;
+  }
+
+  if (pathname === '/api/admin/photos' && method === 'GET') {
+    if (!(await requireAdmin(request, response))) return;
+    await listPhotoQueue(response);
+    return;
+  }
+
+  const photoMatch = pathname.match(/^\/api\/admin\/photos\/([^/]+)$/);
+  if (photoMatch && method === 'PATCH') {
+    if (rejectCrossOrigin(request, response)) return;
+    const admin = await requireAdmin(request, response);
+    if (!admin) return;
+    await reviewPhoto(decodeURIComponent(photoMatch[1]), request, response, admin);
+    return;
+  }
+
   if (pathname === '/api/media' && method === 'GET') {
     await listMedia(response);
     return;
@@ -712,6 +1574,9 @@ async function route(request, response) {
       return;
     }
     if (method === 'GET' || method === 'HEAD') {
+      // Listing photography is part of the gated marketplace; brand marks and
+      // approved profile portraits stay public.
+      if (slug.startsWith('listing-') && !(await currentUser(request, response))) return;
       await getMedia(slug, request, response);
       return;
     }
@@ -757,6 +1622,7 @@ const server = createServer((request, response) => {
 try {
   await ensureSchema();
   await pool.query('delete from sessions where expires_at < now()');
+  await pool.query('delete from password_resets where expires_at < now()');
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`media API on http://127.0.0.1:${PORT} (db: ${DATABASE_URL})`);
   });

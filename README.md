@@ -148,6 +148,8 @@ so no credential is reachable from JavaScript.
 | `POST /api/auth/signup` | name, email, password, role (`buyer` or `seller`) → account + session |
 | `POST /api/auth/login` | email **or** admin username + password → session; `401` is deliberately uniform |
 | `POST /api/auth/admin-credentials` | signed-in admin only: current password + new username/password → replaces the starter credentials; `401` for a wrong current password, `400` for an invalid username/password, `409` for a taken username |
+| `POST /api/auth/forgot` | `{ email }` → `202` for any well-formed address; mails a single-use reset link when the account exists |
+| `POST /api/auth/reset` | `{ token, password }` → replaces the password, burns the token and deletes every session for that account; `400` with `field: token` for an expired or reused link |
 | `POST /api/auth/logout` | delete the session row and clear the cookie |
 | `GET /api/auth/me` | the signed-in user, or `401` |
 
@@ -157,13 +159,51 @@ need an account with selling permission and a `listing-` slug so the seeded bran
 replaced. In production, `npm run db:seed:users` refuses to create demo accounts unless
 `DEMO_PASSWORD` is set.
 
+### What a guest sees
+
+Browsing is behind a sign-in wall. Signed-out visitors get the layout of the catalogue with every
+card's photograph blurred and its copy unreadable, plus a **Login required** pill; the card itself
+links to `/login?next=<page>`. `/homes/:id`, `/restaurants/:id` and `/listings/:id` render a blurred
+cover with a sign-in panel instead of the gallery, price, address, menu or booking form. Signing in
+returns the person to the page they wanted.
+
+The wall is not only cosmetic: `GET /api/listings`, `GET /api/listings/:id` and `GET
+/api/media/listing-*` answer `401` without a session, so seller listings and their photographs are
+never downloaded by a guest. Brand marks and approved profile portraits stay public because the
+sign-in and profile screens need them. The demo catalogue itself is bundled in the JavaScript, so
+its blur is presentation only.
+
+### Forgotten passwords
+
+`/#/forgot` takes an email address and mails a link to `/#/reset?token=…`. Nothing is ever mailed
+in plain text: the token is 32 random bytes, only its **SHA-256** is stored in `password_resets`,
+it works once, and it expires after an hour. Redeeming it also deletes every session for the
+account, so a password that leaked stops working everywhere. The endpoint answers `202` for any
+well-formed address — known or not — so the form cannot be used to discover who has an account,
+and requests are limited to five per IP per hour.
+
+Email goes through [Resend](https://resend.com)'s REST API from `server/mail.mjs`. Set:
+
+| Variable | Purpose |
+| --- | --- |
+| `RESEND_API_KEY` | API key from https://resend.com/api-keys |
+| `MAIL_FROM` | sender on a domain verified in Resend, e.g. `CasaSigma <no-reply@casasigma.com>` |
+| `APP_ORIGIN` | public origin for the link, e.g. `https://casasigma.com`; without it the API uses the browser's `Origin`, then the request host |
+
+Without `RESEND_API_KEY` and `MAIL_FROM` the API still answers `202` and prints the reset link in
+the server log (`[mail not configured] password reset for …`), which is how the flow is exercised
+locally. A mail failure is logged and never changes the response, so an outage cannot be told
+apart from an unknown address.
+
 ## Admin dashboard
 
 The admin signs in as **`admin2`** with the starter password printed by the seed script, then must
 replace both username and password on `/#/admin/credentials` before `/#/admin` opens. Admins are recognised
 by username, buyers and sellers by email, and one login field accepts either. The same page is the
-change-password screen later on — reachable from the dashboard, with no entry in the header or tab
-bar. The API is the real guard.
+change-password screen later on — reachable from the dashboard. Signing in opens `/#/admin`, the
+header (and the phone tab bar) swaps the seller studio for an **Admin** entry so the dashboard is
+one tap away, and `/#/profile` redirects there because an admin has no public profile. The API is
+the real guard regardless of the UI.
 
 Sign up picks a role (`buyer` or `seller`), and that role sets two flags, `can_buy` and `can_sell`,
 which every request re-reads with the session. **`/#/admin`** is the account desk on top of that: it
@@ -185,6 +225,31 @@ Signup-derived flags still gate behaviour: `PUT /api/media/listing-*` answers `4
 permission is not enabled for this account` when `can_sell` is false, and the restaurant contact
 panel replaces phone and email with a “buying is turned off” notice when `can_buy` is false.
 Suspension is the broader switch — a suspended account cannot sign in at all, so it can do neither.
+
+### Cities, listings, viewing requests and profiles
+
+| Request | Purpose |
+| --- | --- |
+| `GET /api/cities` | every town in `cities` with its published-listing count; the city filter reads this |
+| `GET /api/listings` | live listings, newest first (`?mine=1` for the signed-in seller) |
+| `GET /api/listings/:id` | one published listing with its photos, for `/#/listings/:id` |
+| `POST /api/listings` | seller or admin: title, kind, city, price, description → upserts `cities`, inserts `listings` |
+| `POST /api/listings/:id/photos?slot=1…4` | raw image bytes → `media` (`listing-*` slug) and that photo slot; replacing a slot deletes the old file |
+| `DELETE /api/listings/:id/photos/:slot` | removes one photo and its bytes; the other slots keep their numbers |
+| `POST /api/viewings` | the `/book` contact form; guests allowed, signed-in requests get `user_id` |
+| `GET /api/viewings` | the signed-in account's requests, by visit date |
+| `PATCH /api/viewings/:id` | `{ status: 'Cancelled' }` for the owner |
+| `GET /api/profile` | the signed-in account's profile, including its own pending portrait |
+| `PUT /api/profile` | name, phone, company, looking-for, bio; buyers and sellers only |
+| `POST /api/profile/photo` | raw image bytes → `media` (`profile-*` slug), status `pending`, old portrait removed |
+| `GET /api/profiles` | approved portraits only, for the home-page people strip |
+| `GET /api/admin/photos` | the whole queue, pending first; admins only |
+| `PATCH /api/admin/photos/:id` | `{ status: 'approved' \| 'rejected' }`; admins only |
+
+`publicProfile()` never hands a portrait slug to a browser unless the owner is asking or an admin
+has approved it, so hiding an unapproved photo is a server rule, not a CSS trick. Requests are
+validated server-side (email, date, time, price, list membership) and towns are compared through a
+`lower(name)` unique index, so `nerja` and `Nerja` are the same city.
 
 Authorisation is server-side: these endpoints answer `401` without a session and `403` for anyone
 whose role is not `admin`. The page shows a 403 card rather than pretending the area exists, and the
@@ -244,10 +309,22 @@ Notes:
 - **Admin** — the first sign-in uses the starter password and opens a credentials step to choose
   your own username and password; `/#/admin` (no menu entry) then lists every account: totals,
   search, and suspend / reactivate / delete, with an inline confirmation before deleting.
-  Non-admins get a 403 card and the API refuses them.
-- **Plans** — viewing requests, cancellable, persisted in `localStorage` under
-  `casasigma.store.v1` (works in the Android WebView too; viewings saved under the old
-  `stayfound.store.v1` key are migrated on first load).
+  Non-admins get a 403 card and the API refuses them. A **Profile photos** panel on the same page
+  is the approval queue: the pending portraits with submitter, date and Approve / Reject.
+- **Book** — the `/book` page (the old `/plans` link redirects) pairs a contact form — listing,
+  name, email, what you want to see — with a calendar and time slots. Requests go to Postgres and
+  the signed-in account sees and cancels them there. Viewings requested from a listing page are
+  still saved on the device under `casasigma.store.v1` and listed below the account requests.
+- **Seller studio** — signing in as a seller opens `/#/sell` directly, with the Homes tab next to
+  it for browsing and search. The form publishes a listing (title, type, town, price, description)
+  into `listings` and uploads up to four photos into the fixed slots 1–4; slot 1 is the cover.
+  Published listings keep editable photo slots under “Your listings”. The town is upserted into
+  `cities`, so a new place becomes a filter option for every buyer; `/#/homes` reads that table and
+  shows the new listings under “Just listed”, each linking to `/#/listings/:id` with the gallery and
+  a “Request a viewing” link into `/book`.
+- **Profiles** — buyers and sellers fill in `/#/profile` (name, phone, company or what they are
+  looking for, a short bio) and upload a portrait. The photo is stored in `media` and stays hidden
+  until an admin approves it; approved portraits appear on the home page.
 - **Languages** — English, Spanish, Dutch and Danish across every screen. The header `EN ES NL DA`
   pill switches language, the choice persists in `localStorage`, and `<html lang>` follows it.
 - **Footer** — every route ends with the brand, section links, “© 2026 CasaSigma” and a rights line.
@@ -276,24 +353,30 @@ server/          API (Node http + pg): auth, media, no framework
 scripts/         Local Postgres lifecycle, media and demo-account seeding
 test/api/        API tests (node:test), each file boots its own server
 test/web/        Frontend tests (Vitest + jsdom)
-db/              SQL schema for media, users and sessions
+db/              SQL schema for media, users, sessions, cities, listings, listing photos, requests and profiles
 public/brand/    Logo source files (also served as the offline fallback)
 android/         Generated Capacitor Android project
 ```
 
 ## Known limitations
 
-- Viewing requests are stored on the device only; clearing site data or reinstalling loses them.
-- Seller accounts exist, but the seller studio (create a listing, upload photos, publish) is the
-  next milestone — sellers currently browse like buyers and see their role in the header.
+- Viewings requested from a listing page are still device-only; only `/book` requests reach
+  Postgres. Clearing site data or reinstalling loses the device list.
+- The seller studio cannot edit a published listing's text, reorder the cover or delete a listing
+  yet; only its photos can be changed after publishing.
+- Listing photos appear publicly as soon as they are uploaded — unlike profile portraits, there is
+  no admin approval queue for them.
+- Profile photos are capped at 8 MB by `media` and resized to 900 px in the browser first. There
+  is no moderation history beyond the current status.
 - Restaurant interest is a direct call or email after sign-in; there is no stored enquiry thread yet.
 - Sessions are cookie-based and therefore not yet verified inside the Capacitor WebView.
 - Slots are fictional; no availability service is contacted.
-- Listing cards still use generated gradient artwork. The page headers and sign-in panels use
-  credited Wikimedia Commons photography (see [`public/images/CREDITS.md`](public/images/CREDITS.md));
-  seller-uploaded photography is not built yet.
+- Catalogue cards still use generated gradient artwork; seller-published listings show their own
+  uploaded photos. Page headers and sign-in panels use credited Wikimedia Commons photography (see
+  [`public/images/CREDITS.md`](public/images/CREDITS.md)).
 - Landing copy and listing prose stay in the language the seller wrote them in; the interface is
   translated, the catalogue is not.
 - Brand assets live in Postgres on this machine; the Android build has no API and therefore always
   uses the bundled copies.
-- Media upload is now restricted to signed-in sellers, but there is no upload UI yet.
+- Listing media upload is restricted to signed-in sellers but has no UI yet; profile photos do
+  have one.
