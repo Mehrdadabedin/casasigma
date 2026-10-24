@@ -3,7 +3,15 @@ import { Link, NavLink, useLocation } from 'react-router-dom';
 import { BrandLogo } from './BrandLogo';
 import { Footer } from './Footer';
 import { LanguageSwitcher } from './LanguageSwitcher';
-import { CalendarIcon, CompassIcon, ForkIcon, HomeIcon, UserIcon } from './icons';
+import {
+  CalendarIcon,
+  CompassIcon,
+  ForkIcon,
+  HomeIcon,
+  ShieldIcon,
+  TagIcon,
+  UserIcon,
+} from './icons';
 import { useAuth } from '../state/AuthProvider';
 import { useI18n } from '../state/LanguageProvider';
 
@@ -11,8 +19,11 @@ const tabs = [
   { to: '/', key: 'nav.explore', Icon: CompassIcon, end: true },
   { to: '/homes', key: 'nav.homes', Icon: HomeIcon, end: false },
   { to: '/restaurants', key: 'nav.restaurants', Icon: ForkIcon, end: false },
-  { to: '/plans', key: 'nav.plans', Icon: CalendarIcon, end: false },
+  { to: '/book', key: 'nav.book', Icon: CalendarIcon, end: false },
 ];
+
+const sellTab = { to: '/sell', key: 'nav.sell', Icon: TagIcon, end: false };
+const adminTab = { to: '/admin', key: 'nav.admin', Icon: ShieldIcon, end: false };
 
 const roleLabel: Record<string, string> = {
   buyer: 'account.buying',
@@ -34,9 +45,17 @@ export function Layout({ children }: { children: ReactNode }) {
   const isAuthPage = pathname === '/login' || pathname === '/signup';
   const { user, ready, signOut } = useAuth();
   const { t } = useI18n();
-  // The admin dashboard has no menu entry: signing in as admin opens it, and
-  // the route plus /api/admin/* answer 401/403 regardless of the UI.
-  const links = tabs;
+  // Admins get the dashboard in place of the studio tab — they review the
+  // queue rather than publish, and it gives them a way back after leaving the
+  // page. Sellers get the studio tab, which is where a listing (and its town)
+  // is added. The /admin route and /api/admin/* still answer 401/403
+  // regardless of the UI.
+  const links =
+    user?.role === 'admin'
+      ? [...tabs.slice(0, 3), adminTab, tabs[3]]
+      : user?.canSell
+        ? [...tabs.slice(0, 3), sellTab, tabs[3]]
+        : tabs;
 
   return (
     <div className="app">
@@ -67,7 +86,13 @@ export function Layout({ children }: { children: ReactNode }) {
                 <span className={`topbar__role topbar__role--${user.role}`}>
                   {t(roleLabel[user.role] ?? 'account.buying')}
                 </span>
-                <span className="topbar__name">{user.name.split(' ')[0]}</span>
+                {/* The admin badge already names the account, so the name would
+                    read as “Admin Admin”. Everyone else gets a profile link. */}
+                {user.role === 'admin' ? null : (
+                  <Link className="topbar__name" to="/profile" title={t('profile.link')}>
+                    {user.name.split(' ')[0]}
+                  </Link>
+                )}
                 <button
                   className="topbar__signout"
                   type="button"

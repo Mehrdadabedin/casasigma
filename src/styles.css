@@ -255,9 +255,8 @@ button {
   box-shadow: var(--shadow-sm);
 }
 
-/* Puerto Banús behind the page headers. Each photo is 1600 px wide and gets
-   its own right-hand panel, so it stays sharp behind the serif type while the
-   cream gradient keeps the copy at full contrast. */
+/* A right-hand panel behind the page headers, faded towards the copy so the
+   serif type keeps full contrast. */
 .pagehead {
   padding-right: clamp(20px, 3.6vw, 44px);
 }
@@ -268,7 +267,10 @@ button {
   inset: 0 0 0 auto;
   width: 64%;
   z-index: -2;
-  background: url('/images/homes-marina.webp') center 55% / cover no-repeat;
+  /* No third-party photos (owner, 24 Oct): a warm brand wash instead. */
+  background:
+    radial-gradient(circle at 78% 30%, rgb(187 77 51 / 22%), transparent 55%),
+    linear-gradient(135deg, var(--amber-soft), var(--accent-soft) 55%, var(--paper-deep));
   mask-image: linear-gradient(
     90deg,
     transparent 0%,
@@ -285,16 +287,41 @@ button {
   );
 }
 
-.pagehead--homes::before {
-  background-image: url('/images/homes-marina.webp');
-}
-
 .pagehead--restaurants::before {
-  background-image: url('/images/restaurants-marina.webp');
+  background:
+    radial-gradient(circle at 75% 35%, rgb(77 106 86 / 24%), transparent 55%),
+    linear-gradient(135deg, var(--paper-deep), var(--amber-soft));
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(0 0 0 / 50%) 18%,
+    rgb(0 0 0 / 90%) 34%,
+    #000 55%
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(0 0 0 / 50%) 18%,
+    rgb(0 0 0 / 90%) 34%,
+    #000 55%
+  );
 }
 
 .pagehead--plans::before {
-  background-image: url('/images/plans-street.webp');
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(0 0 0 / 35%) 28%,
+    rgb(0 0 0 / 85%) 46%,
+    #000 64%
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(0 0 0 / 35%) 28%,
+    rgb(0 0 0 / 85%) 46%,
+    #000 64%
+  );
 }
 
 .pagehead::after {
@@ -310,6 +337,66 @@ button {
     rgb(248 244 237 / 68%) 58%,
     rgb(248 244 237 / 26%) 82%,
     rgb(248 244 237 / 4%) 100%
+  );
+}
+
+/* Homes and Restaurants reveal more of their photograph behind the copy than
+   the shared veil allows. Both rules sit after `.pagehead::after` so they win
+   on desktop; the ≤640 px block below still overrides them. */
+.pagehead--homes::before {
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(0 0 0 / 50%) 18%,
+    rgb(0 0 0 / 90%) 34%,
+    #000 55%
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(0 0 0 / 50%) 18%,
+    rgb(0 0 0 / 90%) 34%,
+    #000 55%
+  );
+}
+
+.pagehead--homes::after {
+  background: linear-gradient(
+    90deg,
+    rgb(248 244 237 / 100%) 0%,
+    rgb(248 244 237 / 98%) 22%,
+    rgb(248 244 237 / 90%) 34%,
+    rgb(248 244 237 / 60%) 48%,
+    rgb(248 244 237 / 20%) 68%,
+    rgb(248 244 237 / 3%) 100%
+  );
+}
+
+.pagehead--restaurants::after {
+  background: linear-gradient(
+    90deg,
+    rgb(248 244 237 / 100%) 0%,
+    rgb(248 244 237 / 98%) 22%,
+    rgb(248 244 237 / 90%) 34%,
+    rgb(248 244 237 / 60%) 48%,
+    rgb(248 244 237 / 20%) 68%,
+    rgb(248 244 237 / 3%) 100%
+  );
+}
+
+/* The Book copy is wider than the other headers, so its veil holds until past
+   the lede and then gives the white harbour building and its blue sky their
+   colour. */
+.pagehead--plans::after {
+  background: linear-gradient(
+    90deg,
+    rgb(248 244 237 / 100%) 0%,
+    rgb(248 244 237 / 98%) 30%,
+    rgb(248 244 237 / 92%) 36%,
+    rgb(248 244 237 / 55%) 44%,
+    rgb(248 244 237 / 18%) 54%,
+    rgb(248 244 237 / 4%) 70%,
+    rgb(248 244 237 / 0%) 100%
   );
 }
 
@@ -590,6 +677,104 @@ button {
   border-radius: 0;
 }
 
+/* ---------- sign-in wall ---------- */
+
+/* Guests get the shape of a card, not its contents: the artwork is blurred
+   and the copy is unreadable, and the whole card leads to /login. */
+.card--locked .card__media .photo,
+.card--locked .listing-photo {
+  filter: blur(9px);
+  transform: scale(1.06);
+}
+
+.card--locked .card__kind,
+.card--locked .card__rating {
+  display: none;
+}
+
+.card--locked .card__body {
+  filter: blur(5px);
+  opacity: 0.75;
+  user-select: none;
+}
+
+.card--locked:hover {
+  transform: none;
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.locked-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: var(--shadow-md);
+}
+
+.locked-detail {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  isolation: isolate;
+}
+
+.locked-detail__media {
+  filter: blur(10px);
+  transform: scale(1.05);
+}
+
+.locked-detail__media .photo {
+  aspect-ratio: 21 / 9;
+  min-height: 260px;
+  border-radius: 0;
+}
+
+.locked-detail__panel {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 28px 22px;
+  text-align: center;
+  background: rgb(248 244 237 / 62%);
+  backdrop-filter: blur(2px);
+}
+
+.locked-detail__panel h1 {
+  font-size: clamp(1.5rem, 3.4vw, 2.1rem);
+  max-width: 18ch;
+}
+
+.locked-detail__panel p {
+  max-width: 46ch;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.locked-detail__panel .button {
+  margin-top: 6px;
+}
+
+.locked-detail__icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--paper-deep);
+  color: var(--accent-ink);
+}
+
 .card__kind {
   position: absolute;
   top: 10px;
@@ -768,15 +953,23 @@ button {
 }
 
 .field input:not([type='range']),
-.field select {
+.field select,
+.field textarea {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 11px;
   background: var(--card);
+  font-family: inherit;
   font-size: 0.86rem;
   color: var(--ink);
   appearance: none;
+}
+
+.field textarea {
+  min-height: 96px;
+  resize: vertical;
+  line-height: 1.5;
 }
 
 .field select {
@@ -789,7 +982,8 @@ button {
 }
 
 .field input:focus,
-.field select:focus {
+.field select:focus,
+.field textarea:focus {
   border-color: var(--accent);
   outline: none;
   box-shadow: 0 0 0 3px rgb(187 77 51 / 12%);
@@ -1267,21 +1461,27 @@ button {
   color: rgb(248 244 237 / 65%);
 }
 
+/* Times sit in the same rhythm as the day chips above: four compact cells to
+   a row, so the booking panel is not pushed down by seven tall buttons. */
 .slots {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
 }
 
 .slot {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 8px 11px;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  height: 100%;
+  min-height: 34px;
+  padding: 7px 6px;
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--paper);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
   color: var(--ink-soft);
 }
@@ -1305,7 +1505,10 @@ button {
 }
 
 .slot__taken {
-  font-size: 0.58rem;
+  flex-basis: 100%;
+  font-size: 0.52rem;
+  line-height: 1.1;
+  text-align: center;
   text-decoration: none;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1929,6 +2132,13 @@ button {
   font-size: 0.82rem;
   font-weight: 600;
   white-space: nowrap;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+a.topbar__name:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .topbar__signout {
@@ -1983,7 +2193,11 @@ button {
   padding: clamp(22px, 4vw, 42px);
 }
 
+/* Block-level so the eyebrow underneath starts its own line on the screens
+   that have no sign-in/sign-up tabs (forgot and reset password). */
 .auth__panel .backlink {
+  display: flex;
+  width: fit-content;
   margin-bottom: 20px;
 }
 
@@ -2073,6 +2287,41 @@ button {
   text-underline-offset: 3px;
 }
 
+/* Sits under the password field, so a locked-out person sees it before the
+   submit button rather than after it. */
+.auth__forgot {
+  margin-top: -4px;
+  text-align: right;
+  font-size: 0.8rem;
+}
+
+.auth__forgot a {
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+.auth__forgot a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth__sent {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.auth__sent h2 {
+  font-family: var(--serif);
+  font-size: 1.25rem;
+}
+
+.auth__sent p {
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  max-width: 44ch;
+}
+
 
 .auth__media {
   display: none;
@@ -2086,13 +2335,17 @@ button {
   position: absolute;
   inset: 0 0 auto 0;
   height: 72%;
-  background: url('/images/signin-evening.webp') center 42% / cover no-repeat;
+  background:
+    radial-gradient(circle at 28% 32%, rgb(187 77 51 / 38%), transparent 55%),
+    linear-gradient(160deg, #2b4256, #16222e);
   mask-image: linear-gradient(180deg, #000 52%, transparent 96%);
   -webkit-mask-image: linear-gradient(180deg, #000 52%, transparent 96%);
 }
 
 .auth--signup .auth__media::before {
-  background-image: url('/images/signup-marina.webp');
+  background:
+    radial-gradient(circle at 72% 30%, rgb(77 106 86 / 48%), transparent 55%),
+    linear-gradient(160deg, #2b4256, #16222e);
 }
 
 .auth__media::after {
@@ -2443,5 +2696,681 @@ button {
     border: 1px solid rgb(187 77 51 / 25%);
     border-radius: 12px;
     background: rgb(187 77 51 / 6%);
+  }
+}
+
+/* ---------- book: contact form + calendar ---------- */
+
+.booknow {
+  margin-top: 18px;
+  padding: clamp(16px, 3vw, 26px);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.bookform {
+  display: grid;
+  gap: 18px;
+}
+
+.bookform__main {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.bookform__head h2,
+.booknow__sent h2 {
+  font-family: var(--serif);
+  font-size: clamp(1.3rem, 2.6vw, 1.6rem);
+}
+
+.bookform__head p {
+  margin-top: 4px;
+  max-width: 48ch;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.bookform__when {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 14px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+
+.bookform__label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.booknow__sent {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.booknow__sent p {
+  color: var(--ink-soft);
+  max-width: 54ch;
+}
+
+.book__hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  max-width: 60ch;
+}
+
+.plans__footnote a {
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.plancard__thumb-empty {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--muted);
+}
+
+.pill--pending {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+
+.pill--approved {
+  background: rgb(77 106 86 / 14%);
+  color: #33543d;
+}
+
+.pill--rejected {
+  background: rgb(187 77 51 / 12%);
+  color: var(--accent-ink);
+}
+
+.pill--none {
+  background: rgb(34 29 24 / 8%);
+  color: var(--muted);
+}
+
+@media (min-width: 860px) {
+  .bookform {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    align-items: start;
+    gap: 24px;
+  }
+}
+
+/* ---------- avatars ---------- */
+
+.avatar {
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--paper-deep);
+}
+
+.avatar--initials {
+  display: grid;
+  place-items: center;
+  font-family: var(--serif);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- profile ---------- */
+
+.profile__grid {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.profile__form,
+.profile__photo {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: clamp(16px, 3vw, 24px);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.profile__head h2,
+.profile__photo h2 {
+  font-family: var(--serif);
+  font-size: 1.2rem;
+}
+
+.profile__head p {
+  margin-top: 4px;
+  font-size: 0.84rem;
+  color: var(--muted);
+  max-width: 52ch;
+}
+
+.profile__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile__saved {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #33543d;
+}
+
+.profile__avatar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile__status {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.profile__fine {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+@media (min-width: 860px) {
+  .profile__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+    align-items: start;
+  }
+}
+
+
+/* ---------- seller studio ---------- */
+
+.sell__grid {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.sell__form,
+.sell__mine {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: clamp(16px, 3vw, 24px);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.sell__head h2,
+.sell__mine h2 {
+  font-family: var(--serif);
+  font-size: 1.2rem;
+}
+
+.sell__head p,
+.sell__sub {
+  margin-top: 4px;
+  font-size: 0.84rem;
+  color: var(--muted);
+  max-width: 52ch;
+}
+
+.sell__hint {
+  margin-top: -8px;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.sell__created {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #33543d;
+}
+
+.sell__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.sell__item {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.sell__item strong {
+  font-size: 0.88rem;
+}
+
+.sell__place {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.sell__price {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.sell__cities {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.sell__cities-title {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+@media (min-width: 960px) {
+  .sell__grid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr);
+    align-items: start;
+  }
+}
+
+/* ---------- fresh listings ---------- */
+
+.fresh {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.fresh__item {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 14px;
+}
+
+.fresh__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fresh__kind {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fresh__price {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.fresh__item h3 {
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.fresh__place {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.fresh__body {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+/* ---------- people strip ---------- */
+
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+}
+
+.people__card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+
+.people__card strong {
+  font-size: 0.94rem;
+}
+
+.people__role {
+  display: block;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.people__meta {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  margin-top: 4px;
+}
+
+.people__bio {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+/* ---------- admin photo queue ---------- */
+
+.adm__note--tight {
+  margin-top: 4px;
+}
+
+.photo__who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.photo__thumb {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.adm__row.is-approved .photo__thumb {
+  border-color: rgb(77 106 86 / 45%);
+}
+
+.adm__row.is-rejected .photo__thumb {
+  opacity: 0.55;
+  border-color: rgb(187 77 51 / 35%);
+}
+
+.adm__row.is-rejected .adm__who strong {
+  opacity: 0.75;
+}
+
+@media (min-width: 720px) {
+  .adm__panel-head .adm__count {
+    justify-self: end;
+    margin: 0;
+  }
+}
+
+/* ---------- listing photos ---------- */
+
+.listing-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sell__photos {
+  display: grid;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.sell__photos-title {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.photoslots {
+  display: grid;
+  gap: 8px;
+}
+
+.photoslots__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.photoslot {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--paper);
+  border: 1px dashed var(--line-strong);
+}
+
+.photoslot.is-filled {
+  border-style: solid;
+  border-color: var(--line);
+}
+
+.photoslot__add,
+.photoslot__swap {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  padding: 6px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.photoslot__swap {
+  padding: 0;
+}
+
+.photoslot__swap:disabled,
+.photoslot__add:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.photoslot__plus {
+  font-size: 1.2rem;
+  line-height: 1;
+  color: var(--ink-soft);
+}
+
+.photoslot__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photoslot__remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 0;
+  background: rgb(34 29 24 / 72%);
+  color: #fff7ef;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.photoslot__busy {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 3px 6px;
+  background: rgb(34 29 24 / 72%);
+  color: #fff7ef;
+  font-size: 0.62rem;
+  text-align: center;
+}
+
+.sell__item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sell__item-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sell__item-title:hover {
+  text-decoration: underline;
+}
+
+.fresh__link {
+  display: grid;
+  gap: 4px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.fresh__media {
+  display: block;
+  aspect-ratio: 4 / 3;
+  margin: -4px -6px 6px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.fresh__media .photo {
+  height: 100%;
+  border-radius: 0;
+}
+
+/* ---------- seller listing detail ---------- */
+
+.gallery {
+  position: relative;
+  display: grid;
+  gap: 10px;
+}
+
+.gallery__main {
+  aspect-ratio: 16 / 10;
+  max-height: 420px;
+  border-radius: 22px;
+  overflow: hidden;
+}
+
+.gallery__main .photo {
+  height: 100%;
+  border-radius: 0;
+}
+
+.gallery__thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.gallery__thumb {
+  padding: 0;
+  aspect-ratio: 16 / 10;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  background: none;
+  cursor: pointer;
+}
+
+.gallery__thumb .photo {
+  height: 100%;
+  border-radius: 0;
+}
+
+.gallery__thumb.is-active {
+  border-color: var(--accent);
+}
+
+@media (min-width: 900px) {
+  .gallery__main {
+    aspect-ratio: 21 / 9;
   }
 }

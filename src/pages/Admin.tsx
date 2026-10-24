@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { ApiError, adminApi, type AdminStats, type SessionUser } from '../lib/api';
+import {
+  ApiError,
+  adminApi,
+  type AdminStats,
+  type PhotoQueueItem,
+  type SessionUser,
+} from '../lib/api';
 import { useAuth } from '../state/AuthProvider';
 import { useI18n } from '../state/LanguageProvider';
 
@@ -36,6 +42,137 @@ function Forbidden() {
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Portrait approval queue. Nothing here is public until the status flips to
+ * approved; the API enforces the same rule, not just this screen.
+ */
+function PhotoReview() {
+  const { t, locale } = useI18n();
+  const [photos, setPhotos] = useState<PhotoQueueItem[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    adminApi
+      .photos()
+      .then((rows) => {
+        if (alive) setPhotos(rows);
+      })
+      .catch((caught) => {
+        if (!alive) return;
+        setPhotos([]);
+        setError(
+          caught instanceof ApiError && caught.status === 403
+            ? t('admin.forbiddenBody')
+            : t('admin.photosLoadError'),
+        );
+      });
+    return () => {
+      alive = false;
+    };
+  }, [t]);
+
+  async function review(photo: PhotoQueueItem, status: 'approved' | 'rejected') {
+    if (busy) return;
+    setError('');
+    setBusy(photo.id);
+    try {
+      const updated = await adminApi.reviewPhoto(photo.id, status);
+      setPhotos((current) =>
+        current ? current.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)) : current,
+      );
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : t('admin.photoSaveError'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const pending = photos?.filter((photo) => photo.photoStatus === 'pending').length ?? 0;
+
+  return (
+    <section className="adm__panel" aria-label={t('admin.photosHeading')}>
+      <div className="adm__panel-head">
+        <div>
+          <h2>{t('admin.photosHeading')}</h2>
+          <p className="adm__note adm__note--tight">{t('admin.photosLede')}</p>
+        </div>
+        <p className="adm__count" aria-live="polite">
+          {photos === null ? t('admin.loading') : t('admin.photosPending', { n: pending })}
+        </p>
+      </div>
+
+      {error && (
+        <p className="formerror" role="alert">
+          {error}
+        </p>
+      )}
+
+      {photos !== null && photos.length === 0 && (
+        <p className="adm__empty">{t('admin.photosEmpty')}</p>
+      )}
+
+      <ul className="adm__list">
+        {(photos ?? []).map((photo) => {
+          const working = busy === photo.id;
+          return (
+            <li key={photo.id} className={`adm__row photo__row is-${photo.photoStatus}`}>
+              <div className="photo__who">
+                <img
+                  className="photo__thumb"
+                  src={`api/media/${photo.photoSlug}`}
+                  alt={`${t('admin.photosHeading')}: ${photo.displayName}`}
+                  width={56}
+                  height={56}
+                  loading="lazy"
+                />
+                <div className="adm__who">
+                  <strong>{photo.displayName}</strong>
+                  <span className="adm__email">{photo.accountEmail}</span>
+                  <span className="adm__meta">
+                    {t('admin.photosSubmitted', {
+                      date: formatJoined(photo.submittedAt ?? new Date().toISOString(), locale),
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              <div className="adm__badges">
+                <span className={`adm__role adm__role--${photo.kind}`}>
+                  {t(`admin.role.${photo.kind}`)}
+                </span>
+                <span className={`pill pill--${photo.photoStatus}`}>
+                  {t(`photo.${photo.photoStatus}`)}
+                </span>
+              </div>
+
+              <div className="adm__actions">
+                <button
+                  type="button"
+                  className="adm__action adm__action--on"
+                  disabled={working || photo.photoStatus === 'approved'}
+                  onClick={() => void review(photo, 'approved')}
+                >
+                  {working ? t('admin.saving') : t('admin.approve')}
+                </button>
+                <button
+                  type="button"
+                  className="adm__action adm__action--danger"
+                  disabled={working || photo.photoStatus === 'rejected'}
+                  onClick={() => void review(photo, 'rejected')}
+                >
+                  {t('admin.reject')}
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -274,6 +411,8 @@ function Dashboard({ admin }: { admin: SessionUser }) {
 
         <p className="adm__note">{t('admin.note')}</p>
       </section>
+
+      <PhotoReview />
     </div>
   );
 }

@@ -2,8 +2,8 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../state/AuthProvider';
 import { useI18n } from '../state/LanguageProvider';
-import { ApiError, type Role } from '../lib/api';
-import { ArrowLeftIcon, ArrowRightIcon } from '../components/icons';
+import { ApiError, authApi, type Role } from '../lib/api';
+import { ArrowLeftIcon, ArrowRightIcon, CheckIcon } from '../components/icons';
 
 /** Only allow in-app paths, so `?next=` cannot become an open redirect. */
 function safeNext(raw: string | null): string {
@@ -29,8 +29,8 @@ export function AuthShell({
   next = '/homes',
   children,
 }: {
-  /** Omit on the setup screen, which is not a login/signup tab. */
-  active: 'login' | 'signup';
+  /** `forgot` and `reset` are auth screens without the sign-in/sign-up tabs. */
+  active: 'login' | 'signup' | 'forgot' | 'reset';
   title: string;
   lede: string;
   next?: string;
@@ -46,24 +46,26 @@ export function AuthShell({
             <ArrowLeftIcon width={15} height={15} /> {t('auth.back')}
           </Link>
 
-          <div className="auth__tabs" role="tablist" aria-label={t('auth.eyebrow')}>
-            <Link
-              role="tab"
-              aria-selected={active === 'login'}
-              className={`auth__tab ${active === 'login' ? 'is-active' : ''}`}
-              to={withNext('/login', next)}
-            >
-              {t('auth.signInTab')}
-            </Link>
-            <Link
-              role="tab"
-              aria-selected={active === 'signup'}
-              className={`auth__tab ${active === 'signup' ? 'is-active' : ''}`}
-              to={withNext('/signup', next)}
-            >
-              {t('auth.signUpTab')}
-            </Link>
-          </div>
+          {active === 'login' || active === 'signup' ? (
+            <div className="auth__tabs" role="tablist" aria-label={t('auth.eyebrow')}>
+              <Link
+                role="tab"
+                aria-selected={active === 'login'}
+                className={`auth__tab ${active === 'login' ? 'is-active' : ''}`}
+                to={withNext('/login', next)}
+              >
+                {t('auth.signInTab')}
+              </Link>
+              <Link
+                role="tab"
+                aria-selected={active === 'signup'}
+                className={`auth__tab ${active === 'signup' ? 'is-active' : ''}`}
+                to={withNext('/signup', next)}
+              >
+                {t('auth.signUpTab')}
+              </Link>
+            </div>
+          ) : null}
 
           <p className="eyebrow">{t('auth.eyebrow')}</p>
           <h1>{title}</h1>
@@ -96,12 +98,19 @@ function errorMessage(error: unknown, t: (key: string) => string): string {
 
 /**
  * Admins land on the dashboard, or on the credential step while they still use
- * the starter password; everyone else lands on the page they asked for.
+ * the starter password. Sellers land in the studio where listings and their
+ * photos live; everyone else lands on the page they asked for.
  */
 function landing(user: { role: Role; mustSetPassword: boolean } | null | undefined, next: string) {
-  if (user?.role !== 'admin') return next;
-  if (user.mustSetPassword) return '/admin/credentials';
-  return next === '/homes' ? '/admin' : next;
+  if (user?.role === 'admin') {
+    if (user.mustSetPassword) return '/admin/credentials';
+    // An admin has no public profile, so “Your profile” must not land on that
+    // notice — the dashboard is the only useful destination for them.
+    if (next === '/homes' || next === '/profile') return '/admin';
+    return next;
+  }
+  if (user?.role === 'seller' && next === '/homes') return '/sell';
+  return next;
 }
 
 export function LoginPage() {
@@ -164,6 +173,10 @@ export function LoginPage() {
           />
         </label>
 
+        <p className="auth__forgot">
+          <Link to="/forgot">{t('auth.forgot')}</Link>
+        </p>
+
         {error && (
           <p className="formerror" role="alert">
             {error}
@@ -197,7 +210,7 @@ export function SignupPage() {
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
-    if (ready && user) navigate(next, { replace: true });
+    if (ready && user) navigate(landing(user, next), { replace: true });
   }, [ready, user, next, navigate]);
 
   async function onSubmit(event: FormEvent) {
@@ -205,8 +218,8 @@ export function SignupPage() {
     setError('');
     setPending(true);
     try {
-      await signUp({ name: name.trim(), email: email.trim(), password, role });
-      navigate(next, { replace: true });
+      const session = await signUp({ name: name.trim(), email: email.trim(), password, role });
+      navigate(landing(session, next), { replace: true });
     } catch (caught) {
       setError(errorMessage(caught, t));
     } finally {
@@ -293,6 +306,195 @@ export function SignupPage() {
         <p className="auth__switch">
           {t('auth.haveAccount')}{' '}
           <Link to={withNext('/login', next)}>{t('auth.signInLink')}</Link>
+        </p>
+      </form>
+    </AuthShell>
+  );
+}
+
+/**
+ * “Forgot your password?” — mails a single-use link. The API answers 202 for
+ * any well-formed address, so this screen never learns whether an account
+ * exists; it always moves to the same “check your inbox” state.
+ */
+export function ForgotPasswordPage() {
+  const { t } = useI18n();
+  const next = useNextPath();
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    setPending(true);
+    try {
+      await authApi.forgotPassword(email.trim());
+      setSent(true);
+    } catch (caught) {
+      setError(errorMessage(caught, t));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <AuthShell active="forgot" title={t('forgot.title')} lede={t('forgot.lede')} next={next}>
+      {sent ? (
+        <div className="auth__form">
+          <div className="auth__sent" role="status">
+            <span className="booking__check">
+              <CheckIcon width={18} height={18} />
+            </span>
+            <h2>{t('forgot.sentTitle')}</h2>
+            <p>{t('forgot.sentBody')}</p>
+          </div>
+          <Link className="button button--block" to={withNext('/login', next)}>
+            {t('forgot.back')}
+          </Link>
+        </div>
+      ) : (
+        <form className="auth__form" onSubmit={onSubmit}>
+          <label className="field">
+            <span>{t('auth.email')}</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+              placeholder="you@example.com"
+              required
+            />
+          </label>
+
+          {error && (
+            <p className="formerror" role="alert">
+              {error}
+            </p>
+          )}
+
+          <button className="button button--block" type="submit" disabled={pending}>
+            {pending ? t('forgot.sending') : t('forgot.submit')}
+            {!pending && <ArrowRightIcon width={16} height={16} />}
+          </button>
+
+          <p className="auth__switch">
+            <Link to={withNext('/login', next)}>{t('forgot.back')}</Link>
+          </p>
+        </form>
+      )}
+    </AuthShell>
+  );
+}
+
+/**
+ * The landing page for a mailed reset link. The token is in `?token=`; a
+ * successful reset signs every device out, so the last step is signing in
+ * again with the new password.
+ */
+export function ResetPasswordPage() {
+  const { t } = useI18n();
+  const [params] = useSearchParams();
+  const token = params.get('token') ?? '';
+
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    if (password.length < 10) {
+      setError(t('auth.errorPassword'));
+      return;
+    }
+    if (password !== confirm) {
+      setError(t('reset.mismatch'));
+      return;
+    }
+    setPending(true);
+    try {
+      await authApi.resetPassword(token, password);
+      setDone(true);
+    } catch (caught) {
+      const stale = caught instanceof ApiError && caught.field === 'token';
+      setError(stale ? t('reset.invalid') : errorMessage(caught, t));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (!token) {
+    return (
+      <AuthShell active="reset" title={t('reset.title')} lede={t('reset.missing')}>
+        <div className="auth__form">
+          <Link className="button button--block" to="/forgot">
+            {t('reset.request')}
+          </Link>
+          <p className="auth__switch">
+            <Link to="/login">{t('forgot.back')}</Link>
+          </p>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  if (done) {
+    return (
+      <AuthShell active="reset" title={t('reset.doneTitle')} lede={t('reset.doneBody')}>
+        <div className="auth__form">
+          <Link className="button button--block" to="/login">
+            {t('auth.signIn')}
+          </Link>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  return (
+    <AuthShell active="reset" title={t('reset.title')} lede={t('reset.lede')}>
+      <form className="auth__form" onSubmit={onSubmit}>
+        <label className="field">
+          <span>{t('reset.password')}</span>
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="new-password"
+            placeholder={t('auth.passwordHint')}
+            minLength={10}
+            required
+          />
+        </label>
+
+        <label className="field">
+          <span>{t('reset.confirm')}</span>
+          <input
+            type="password"
+            value={confirm}
+            onChange={(event) => setConfirm(event.target.value)}
+            autoComplete="new-password"
+            minLength={10}
+            required
+          />
+        </label>
+
+        {error && (
+          <p className="formerror" role="alert">
+            {error}
+          </p>
+        )}
+
+        <button className="button button--block" type="submit" disabled={pending}>
+          {pending ? t('reset.saving') : t('reset.submit')}
+          {!pending && <ArrowRightIcon width={16} height={16} />}
+        </button>
+
+        <p className="auth__switch">
+          <Link to="/forgot">{t('reset.request')}</Link>
         </p>
       </form>
     </AuthShell>

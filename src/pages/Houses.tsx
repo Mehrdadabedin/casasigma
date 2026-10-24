@@ -1,10 +1,14 @@
-import { useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { houseCities, houseKinds, houses } from '../data/houses';
 import { HouseCard } from '../components/cards';
+import { ListingPhoto } from '../components/Photo';
 import { EmptyState } from '../components/pickers';
 import { formatPrice } from '../lib/format';
+import { PinIcon } from '../components/icons';
+import { cityApi, listingApi, type Listing } from '../lib/api';
 import { useI18n } from '../state/LanguageProvider';
+import { useAuth } from '../state/AuthProvider';
 
 type SortKey = 'recommended' | 'price-asc' | 'price-desc' | 'area-desc';
 
@@ -14,11 +18,39 @@ const minCataloguePrice = Math.min(...houses.map((house) => house.price));
 export function Houses() {
   const [params, setParams] = useSearchParams();
   const { t, tp } = useI18n();
+  const { user } = useAuth();
   const query = params.get('q') ?? '';
   const city = params.get('city') ?? 'all';
   const kind = params.get('kind') ?? 'all';
   const budget = Number(params.get('max') ?? maxCataloguePrice);
   const sort = (params.get('sort') as SortKey | null) ?? 'recommended';
+  // Towns come from Postgres, so a seller who lists in a new one adds it here.
+  const [dbCities, setDbCities] = useState<string[]>([]);
+  const [fresh, setFresh] = useState<Listing[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    cityApi
+      .list()
+      .then((rows) => {
+        if (alive) setDbCities(rows.map((row) => row.name));
+      })
+      .catch(() => undefined);
+    listingApi
+      .list()
+      .then((rows) => {
+        if (alive) setFresh(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const cityOptions = useMemo(
+    () => [...new Set([...houseCities, ...dbCities])].sort((a, b) => a.localeCompare(b)),
+    [dbCities],
+  );
 
   const maxPrice = Number.isFinite(budget) ? budget : maxCataloguePrice;
 
@@ -52,6 +84,18 @@ export function Houses() {
     }
   }, [query, city, kind, maxPrice, sort]);
 
+  const freshResults = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return fresh.filter((listing) => {
+      const haystack = `${listing.title} ${listing.city} ${listing.kind} ${listing.description}`.toLowerCase();
+      const matchesQuery = !needle || haystack.includes(needle);
+      const matchesCity = city === 'all' || listing.city === city;
+      const matchesKind = kind === 'all' || listing.kind === kind;
+      const matchesPrice = listing.price <= maxPrice;
+      return matchesQuery && matchesCity && matchesKind && matchesPrice;
+    });
+  }, [fresh, query, city, kind, maxPrice]);
+
   const hasFilters =
     Boolean(query) || city !== 'all' || kind !== 'all' || maxPrice < maxCataloguePrice;
 
@@ -77,7 +121,7 @@ export function Houses() {
           <span>{t('filters.city')}</span>
           <select value={city} onChange={(event) => update('city', event.target.value)}>
             <option value="all">{t('filters.anyCity')}</option>
-            {houseCities.map((option) => (
+            {cityOptions.map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>
@@ -121,7 +165,7 @@ export function Houses() {
       </div>
 
       <div className="resultbar">
-        <span>{tp('homes.result', results.length)}</span>
+        <span>{tp('homes.result', results.length + freshResults.length)}</span>
         {hasFilters && (
           <button className="textlink" type="button" onClick={() => setParams({}, { replace: true })}>
             {t('common.clearFilters')}
@@ -129,23 +173,67 @@ export function Houses() {
         )}
       </div>
 
-      {results.length === 0 ? (
+      {results.length === 0 && freshResults.length === 0 ? (
         <EmptyState
           title={t('homes.emptyTitle')}
-          body={t('homes.emptyBody', { n: houses.length, cities: houseCities.length })}
+          body={t('homes.emptyBody', { n: houses.length, cities: cityOptions.length })}
           action={
             <button className="button button--ghost" onClick={() => setParams({}, { replace: true })}>
               {t('common.resetFilters')}
             </button>
           }
         />
-      ) : (
+      ) : results.length > 0 ? (
         <div className="grid">
           {results.map((house) => (
             <HouseCard key={house.id} house={house} />
           ))}
         </div>
+      ) : null}
+
+      {/* Seller listings are behind the sign-in wall, and the API answers 401
+          to guests, so the section only exists for signed-in accounts. */}
+      {user && freshResults.length > 0 && (
+        <section className="block">
+          <div className="section__head">
+            <h2>{t('homes.freshTitle')}</h2>
+            <p>{t('homes.freshSub')}</p>
+          </div>
+          <ul className="fresh">
+            {freshResults.map((listing) => (
+              <li key={listing.id} className="fresh__item">
+                <Link className="fresh__link" to={`/listings/${listing.id}`}>
+                  {listing.photos[0] && (
+                    <span className="fresh__media">
+                      <ListingPhoto slug={listing.photos[0].slug} alt={listing.title} />
+                    </span>
+                  )}
+                  <span className="fresh__top">
+                    <span className="fresh__kind">{listing.kind}</span>
+                    <span className="fresh__price">{formatPrice(listing.price)}</span>
+                  </span>
+                  <h3>{listing.title}</h3>
+                  <span className="fresh__place">
+                    <PinIcon width={13} height={13} /> {listing.city}
+                    {listing.sellerName ? ` · ${listing.sellerName}` : ''}
+                  </span>
+                  {listing.description && (
+                    <span className="fresh__body">{listing.description}</span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
+
+      {/* Only people who can actually open the studio get the invitation;
+          a buyer who clicked it would be sent straight back here. */}
+      {!user || user.canSell ? (
+        <p className="plans__footnote">
+          <Link to="/sell">{t('homes.sellLink')}</Link>
+        </p>
+      ) : null}
     </div>
   );
 }

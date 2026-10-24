@@ -138,6 +138,15 @@ export function UserIcon(props: IconProps) {
   );
 }
 
+export function TagIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M12.6 3.5H20v7.4l-8.6 8.6a1.8 1.8 0 0 1-2.5 0l-4.9-4.9a1.8 1.8 0 0 1 0-2.5z" />
+      <circle cx="16.4" cy="7.6" r="1.4" />
+    </svg>
+  );
+}
+
 export function PlusIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>

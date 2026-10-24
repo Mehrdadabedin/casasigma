@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 interface PhotoProps {
   gradient: [string, string];
   label?: string;
@@ -21,5 +23,35 @@ export function Photo({ gradient, label, className = '' }: PhotoProps) {
       <span className="photo__line" aria-hidden="true" />
       <span className="photo__line photo__line--two" aria-hidden="true" />
     </div>
+  );
+}
+
+/**
+ * A photo a seller uploaded for a listing. A missing slug (or a failed load)
+ * falls back to the generated artwork, so a card never shows a broken image.
+ */
+export function ListingPhoto({
+  slug,
+  alt,
+  className = '',
+}: {
+  slug?: string | null;
+  alt: string;
+  className?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (!slug || failed) {
+    return <Photo gradient={['#efe7dc', '#cbbca8']} label={alt} className={className} />;
+  }
+
+  return (
+    <img
+      className={`photo listing-photo ${className}`.trim()}
+      src={`api/media/${slug}`}
+      alt={alt}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
   );
 }
