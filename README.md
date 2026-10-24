@@ -372,8 +372,8 @@ android/         Generated Capacitor Android project
 - Sessions are cookie-based and therefore not yet verified inside the Capacitor WebView.
 - Slots are fictional; no availability service is contacted.
 - Catalogue cards still use generated gradient artwork; seller-published listings show their own
-  uploaded photos. Page headers and sign-in panels use credited Wikimedia Commons photography (see
-  [`public/images/CREDITS.md`](public/images/CREDITS.md)).
+  uploaded photos. Page headers and sign-in panels use brand-coloured backgrounds: the site holds
+  no third-party photos.
 - Landing copy and listing prose stay in the language the seller wrote them in; the interface is
   translated, the catalogue is not.
 - Brand assets live in Postgres on this machine; the Android build has no API and therefore always

@@ -255,9 +255,8 @@ button {
   box-shadow: var(--shadow-sm);
 }
 
-/* Puerto Banús behind the page headers. Each photo is 1600 px wide and gets
-   its own right-hand panel, so it stays sharp behind the serif type while the
-   cream gradient keeps the copy at full contrast. */
+/* A right-hand panel behind the page headers, faded towards the copy so the
+   serif type keeps full contrast. */
 .pagehead {
   padding-right: clamp(20px, 3.6vw, 44px);
 }
@@ -268,7 +267,10 @@ button {
   inset: 0 0 0 auto;
   width: 64%;
   z-index: -2;
-  background: url('/images/homes-marina.webp') center 55% / cover no-repeat;
+  /* No third-party photos (owner, 24 Oct): a warm brand wash instead. */
+  background:
+    radial-gradient(circle at 78% 30%, rgb(187 77 51 / 22%), transparent 55%),
+    linear-gradient(135deg, var(--amber-soft), var(--accent-soft) 55%, var(--paper-deep));
   mask-image: linear-gradient(
     90deg,
     transparent 0%,
@@ -285,15 +287,10 @@ button {
   );
 }
 
-.pagehead--homes::before {
-  background-image: url('/images/homes-marina.webp');
-}
-
-/* The Creperia sign sits at the left of this photo, where the shared veil is
-   heaviest. The restaurant header lightens its own mask and gradient so the
-   shopfront reads through while the copy keeps a cream backdrop. */
 .pagehead--restaurants::before {
-  background-image: url('/images/plans-street.webp');
+  background:
+    radial-gradient(circle at 75% 35%, rgb(77 106 86 / 24%), transparent 55%),
+    linear-gradient(135deg, var(--paper-deep), var(--amber-soft));
   mask-image: linear-gradient(
     90deg,
     transparent 0%,
@@ -310,11 +307,7 @@ button {
   );
 }
 
-/* The Book header shares the credited Puerto Banús street photo with
-   Restaurants (see public/images/CREDITS.md). Only photos with a licence that
-   allows reuse go here, never one copied from a search engine. */
 .pagehead--plans::before {
-  background-image: url('/images/plans-street.webp');
   mask-image: linear-gradient(
     90deg,
     transparent 0%,
@@ -2342,13 +2335,17 @@ a.topbar__name:hover {
   position: absolute;
   inset: 0 0 auto 0;
   height: 72%;
-  background: url('/images/signin-evening.webp') center 42% / cover no-repeat;
+  background:
+    radial-gradient(circle at 28% 32%, rgb(187 77 51 / 38%), transparent 55%),
+    linear-gradient(160deg, #2b4256, #16222e);
   mask-image: linear-gradient(180deg, #000 52%, transparent 96%);
   -webkit-mask-image: linear-gradient(180deg, #000 52%, transparent 96%);
 }
 
 .auth--signup .auth__media::before {
-  background-image: url('/images/signup-marina.webp');
+  background:
+    radial-gradient(circle at 72% 30%, rgb(77 106 86 / 48%), transparent 55%),
+    linear-gradient(160deg, #2b4256, #16222e);
 }
 
 .auth__media::after {
