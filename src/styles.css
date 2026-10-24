@@ -2852,6 +2852,14 @@ a.topbar__name:hover {
   border: 1px solid var(--line);
 }
 
+.hp {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

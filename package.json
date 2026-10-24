@@ -17,7 +17,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "npm run test:api && npm run test:web",
-    "test:api": "node --test \"test/api/**/*.test.mjs\"",
+    "test:api": "node --test --test-concurrency=1 \"test/api/**/*.test.mjs\"",
     "test:web": "vitest run",
     "android:sync": "npm run build && cap sync android",
     "android:open": "cap open android",

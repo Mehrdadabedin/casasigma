@@ -55,6 +55,7 @@ export function Book() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [description, setDescription] = useState('');
+  const [website, setWebsite] = useState('');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const [sent, setSent] = useState<ViewingRequest | null>(null);
@@ -169,6 +170,7 @@ export function Book() {
         description: description.trim(),
         date: day,
         time,
+        website,
       });
       setSent(request);
       setRequests((current) => (current ? [request, ...current] : [request]));
@@ -231,6 +233,15 @@ export function Book() {
         ) : (
           <form className="bookform" onSubmit={onSubmit} noValidate>
             <div className="bookform__main">
+              <div className="hp" aria-hidden="true">
+                <input
+                  name="website"
+                  value={website}
+                  onChange={(event) => setWebsite(event.target.value)}
+                  tabIndex={-1}
+                  autoComplete="off"
+                />
+              </div>
               <div className="bookform__head">
                 <h2>{t('book.formTitle')}</h2>
                 <p>{t('book.formSub')}</p>
