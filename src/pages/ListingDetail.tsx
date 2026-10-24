@@ -114,10 +114,12 @@ export function ListingDetail() {
                 {photos.length > 0 ? ` · ${tp('listing.photoCount', photos.length)}` : ''}
               </p>
             </div>
-            <div className="detail__price">
-              {formatPrice(listing.price)}
-              <span>{t('price.asking')}</span>
-            </div>
+            {listing.price !== undefined && (
+              <div className="detail__price">
+                {formatPrice(listing.price)}
+                <span>{t('price.asking')}</span>
+              </div>
+            )}
           </div>
 
           <section className="block">

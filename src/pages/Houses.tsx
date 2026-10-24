@@ -6,6 +6,7 @@ import { ListingPhoto } from '../components/Photo';
 import { EmptyState } from '../components/pickers';
 import { formatPrice } from '../lib/format';
 import { PinIcon } from '../components/icons';
+import { LockedBadge, useLoginPath } from '../components/Locked';
 import { cityApi, listingApi, type Listing } from '../lib/api';
 import { useI18n } from '../state/LanguageProvider';
 import { useAuth } from '../state/AuthProvider';
@@ -19,6 +20,7 @@ export function Houses() {
   const [params, setParams] = useSearchParams();
   const { t, tp } = useI18n();
   const { user } = useAuth();
+  const loginPath = useLoginPath();
   const query = params.get('q') ?? '';
   const city = params.get('city') ?? 'all';
   const kind = params.get('kind') ?? 'all';
@@ -87,11 +89,11 @@ export function Houses() {
   const freshResults = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return fresh.filter((listing) => {
-      const haystack = `${listing.title} ${listing.city} ${listing.kind} ${listing.description}`.toLowerCase();
+      const haystack = `${listing.title} ${listing.city} ${listing.kind} ${listing.description ?? ''}`.toLowerCase();
       const matchesQuery = !needle || haystack.includes(needle);
       const matchesCity = city === 'all' || listing.city === city;
       const matchesKind = kind === 'all' || listing.kind === kind;
-      const matchesPrice = listing.price <= maxPrice;
+      const matchesPrice = listing.price === undefined || listing.price <= maxPrice;
       return matchesQuery && matchesCity && matchesKind && matchesPrice;
     });
   }, [fresh, query, city, kind, maxPrice]);
@@ -193,7 +195,7 @@ export function Houses() {
 
       {/* Seller listings are behind the sign-in wall, and the API answers 401
           to guests, so the section only exists for signed-in accounts. */}
-      {user && freshResults.length > 0 && (
+      {freshResults.length > 0 && (
         <section className="block">
           <div className="section__head">
             <h2>{t('homes.freshTitle')}</h2>
@@ -202,15 +204,21 @@ export function Houses() {
           <ul className="fresh">
             {freshResults.map((listing) => (
               <li key={listing.id} className="fresh__item">
-                <Link className="fresh__link" to={`/listings/${listing.id}`}>
-                  {listing.photos[0] && (
+                {/* A guest's listing has no price, description or photos (MKT1.3):
+                    an empty photo spot, blurred, and the card leads to sign-in. */}
+                <Link className={`fresh__link ${listing.locked ? 'fresh__link--locked' : ''}`}
+                  to={listing.locked ? loginPath : `/listings/${listing.id}`}>
+                  {(listing.locked || listing.photos[0]) && (
                     <span className="fresh__media">
-                      <ListingPhoto slug={listing.photos[0].slug} alt={listing.title} />
+                      <ListingPhoto slug={listing.photos[0]?.slug} alt={listing.title} />
+                      {listing.locked && <LockedBadge />}
                     </span>
                   )}
                   <span className="fresh__top">
                     <span className="fresh__kind">{listing.kind}</span>
-                    <span className="fresh__price">{formatPrice(listing.price)}</span>
+                    {listing.price !== undefined && (
+                      <span className="fresh__price">{formatPrice(listing.price)}</span>
+                    )}
                   </span>
                   <h3>{listing.title}</h3>
                   <span className="fresh__place">

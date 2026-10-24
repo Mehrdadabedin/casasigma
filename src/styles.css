@@ -704,19 +704,28 @@ button {
   box-shadow: none;
 }
 
+/* MKT1.2, after the owner's reference: a solid button in the middle of the
+   blurred photo, large enough to read and tap on a phone. */
 .locked-badge {
   position: absolute;
   top: 50%;
   left: 50%;
+  z-index: 1;
   transform: translate(-50%, -50%);
-  padding: 9px 16px;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--paper);
-  font-size: 0.8rem;
+  padding: 11px 22px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.92rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
   white-space: nowrap;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 10px 24px -10px rgb(143 55 34 / 60%);
+}
+
+.card--locked:hover .locked-badge,
+.fresh__link--locked:hover .locked-badge {
+  background: var(--accent-ink);
 }
 
 .locked-detail {
@@ -3322,6 +3331,22 @@ a.topbar__name:hover {
 .fresh__media .photo {
   height: 100%;
   border-radius: 0;
+}
+
+.fresh__media {
+  position: relative;
+}
+
+.fresh__link--locked .fresh__media .photo {
+  filter: blur(9px);
+  transform: scale(1.06);
+}
+
+.fresh__link--locked h3,
+.fresh__link--locked .fresh__place,
+.fresh__link--locked .fresh__body {
+  filter: blur(4px);
+  user-select: none;
 }
 
 /* ---------- seller listing detail ---------- */

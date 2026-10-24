@@ -3,7 +3,7 @@ import type { House, Restaurant } from '../types';
 import { formatPrice } from '../lib/format';
 import { BedIcon, BathIcon, AreaIcon, PinIcon, StarIcon } from './icons';
 import { Photo } from './Photo';
-import { LockedBadge, useLocked, useLoginPath } from './Locked';
+import { LockedBadge, LockedCardBody, useLocked, useLoginPath } from './Locked';
 import { useI18n } from '../state/LanguageProvider';
 
 export function Rating({ value, count }: { value: number; count?: number }) {
@@ -37,7 +37,7 @@ export function HouseCard({ house, compact = false }: { house: House; compact?: 
           <Rating value={house.rating} />
         </span>
       </div>
-      <div className="card__body" aria-hidden={locked || undefined}>
+      {locked ? <LockedCardBody kind={house.kind} city={house.city} /> : <div className="card__body">
         <div className="card__price">
           {formatPrice(house.price)}
           <span className="card__muted"> {t('price.guide')}</span>
@@ -58,7 +58,7 @@ export function HouseCard({ house, compact = false }: { house: House; compact?: 
             <AreaIcon width={14} height={14} /> {house.area} m²
           </span>
         </div>
-      </div>
+      </div>}
     </Link>
   );
 }
@@ -88,7 +88,7 @@ export function RestaurantCard({
           <Rating value={restaurant.rating} count={restaurant.reviewCount} />
         </span>
       </div>
-      <div className="card__body" aria-hidden={locked || undefined}>
+      {locked ? <LockedCardBody kind={restaurant.cuisine} city={restaurant.city} /> : <div className="card__body">
         <div className="card__price">
           {formatPrice(restaurant.price)}
           <span className="card__muted"> {t('price.asking')}</span>
@@ -103,7 +103,7 @@ export function RestaurantCard({
           <span>{t(`tenure.${restaurant.tenure}`)}</span>
         </div>
         <p className="card__blurb">{restaurant.blurb}</p>
-      </div>
+      </div>}
     </Link>
   );
 }

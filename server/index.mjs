@@ -827,6 +827,23 @@ function publicListing(row) {
 }
 
 /**
+ * What a signed-out visitor may see of a listing (MKT1.3): enough for a locked
+ * card and for choosing it on /book, but no price, description, seller or
+ * photos. Listing photos already answer 401 without a session.
+ */
+function guestListing(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    kind: row.kind,
+    city: row.city,
+    locked: true,
+    photos: [],
+    createdAt: row.created_at,
+  };
+}
+
+/**
  * Listing columns plus the ordered photo slugs. `array(...)` keeps slots in
  * position order and still yields an empty array when nothing is uploaded.
  */
@@ -928,7 +945,7 @@ async function listListings(request, response, url) {
           order by l.created_at desc limit 200`,
       );
 
-  sendJson(response, 200, { listings: rows.map(publicListing) });
+  sendJson(response, 200, { listings: rows.map(session ? publicListing : guestListing) });
 }
 
 /** One published listing, with its photos, for the public detail page. */
@@ -1469,7 +1486,8 @@ async function route(request, response) {
   // Seller listings are not public: the marketplace is for signed-in accounts,
   // so guests get 401 here and a sign-in prompt in the UI.
   if (pathname === '/api/listings' && method === 'GET') {
-    if (!(await currentUser(request, response))) return;
+    // Guests get the redacted list (guestListing): locked cards and the /book
+    // picker need it. `?mine=1` still answers 401 without a session.
     await listListings(request, response, url);
     return;
   }
