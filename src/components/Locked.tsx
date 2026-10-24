@@ -52,10 +52,13 @@ export function LockedDetail({
   media,
   backTo,
   backLabel,
+  bookTo,
 }: {
   media: ReactNode;
   backTo: string;
   backLabel: string;
+  /** Booking a viewing needs no account, so a locked page still links to it. */
+  bookTo: string;
 }) {
   const { t } = useI18n();
   const loginPath = useLoginPath();
@@ -76,9 +79,14 @@ export function LockedDetail({
           </span>
           <h1>{t('gate.title')}</h1>
           <p>{t('gate.lede')}</p>
-          <Link className="button" to={loginPath}>
-            {t('gate.cta')}
-          </Link>
+          <div className="locked-detail__actions">
+            <Link className="button" to={loginPath}>
+              {t('gate.cta')}
+            </Link>
+            <Link className="button button--ghost" to={bookTo}>
+              {t('gate.book')}
+            </Link>
+          </div>
         </div>
       </div>
     </div>

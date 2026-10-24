@@ -42,13 +42,13 @@ export function Book() {
   const { user } = useAuth();
   const { t, locale } = useI18n();
 
-  // A listing detail page links here as /book?listing=<uuid>.
+  // Links look like /book?listing=<uuid> (seller listing) or ?listing=house:<id>.
   const [params] = useSearchParams();
   const requested = params.get('listing');
   const [live, setLive] = useState<Listing[]>([]);
 
   const [listing, setListing] = useState(() =>
-    requested ? `listing:${requested}` : `house:${houses[0]?.id ?? ''}`,
+    requested ? (requested.includes(':') ? requested : `listing:${requested}`) : `house:${houses[0]?.id ?? ''}`,
   );
   const [day, setDay] = useState(days[0] ?? '');
   const [time, setTime] = useState('');
