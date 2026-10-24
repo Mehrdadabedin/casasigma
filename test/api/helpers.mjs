@@ -4,6 +4,8 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { randomBytes } from 'node:crypto';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import pg from 'pg';
@@ -47,13 +49,27 @@ function freePort() {
   });
 }
 
-/** Start server/index.mjs on a free port and wait until /api/health answers. */
-export async function startServer() {
+/**
+ * Start server/index.mjs on a free port and wait until /api/health answers.
+ * Each server gets its own temporary mail outbox and never sees real mail
+ * settings; `env` overrides (for example `NODE_ENV: 'production'`) go on top.
+ */
+export async function startServer(env = {}) {
   assertTestDatabase(TEST_DATABASE_URL);
   const port = await freePort();
+  const outbox = mkdtempSync(join(tmpdir(), 'casasigma-outbox-'));
+  const childEnv = {
+    ...process.env,
+    API_PORT: String(port),
+    DATABASE_URL: TEST_DATABASE_URL,
+    MAIL_OUTBOX_DIR: outbox,
+    ...env,
+  };
+  delete childEnv.RESEND_API_KEY;
+  delete childEnv.MAIL_FROM;
   const child = spawn(process.execPath, [SERVER], {
     cwd: ROOT,
-    env: { ...process.env, API_PORT: String(port), DATABASE_URL: TEST_DATABASE_URL },
+    env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
@@ -71,9 +87,14 @@ export async function startServer() {
       await fetch(`${baseUrl}/api/health`);
       return {
         baseUrl,
+        outbox,
+        /** Files in the outbox, oldest first. */
+        mails: () => readdirSync(outbox).sort(),
+        mail: (name) => readFileSync(join(outbox, name), 'utf8'),
         async stop() {
           if (child.exitCode === null) child.kill('SIGTERM');
           await exited;
+          rmSync(outbox, { recursive: true, force: true });
         },
       };
     } catch {

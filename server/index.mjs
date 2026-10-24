@@ -11,7 +11,7 @@ import {
 } from 'node:crypto';
 import { promisify } from 'node:util';
 import pg from 'pg';
-import { mailConfigured, sendPasswordResetEmail } from './mail.mjs';
+import { passwordResetMail, sendMail, viewingSellerMail, viewingVisitorMail } from './mail.mjs';
 
 const { Pool } = pg;
 const scrypt = promisify(scryptCallback);
@@ -524,17 +524,7 @@ async function forgotPassword(request, response) {
     );
 
     const resetUrl = `${appOrigin(request)}/#/reset?token=${encodeURIComponent(token)}`;
-    if (mailConfigured()) {
-      try {
-        await sendPasswordResetEmail({ to: user.email, name: user.name, resetUrl });
-      } catch (error) {
-        // A mail outage must not turn into a different answer for a real
-        // address; log it and let the person ask again.
-        console.error(`password reset email to ${user.email} failed: ${error.message}`);
-      }
-    } else {
-      console.log(`[mail not configured] password reset for ${user.email}: ${resetUrl}`);
-    }
+    await sendMail({ to: user.email, ...passwordResetMail({ name: user.name, resetUrl }) });
   }
 
   sendJson(response, 202, { ok: true });
@@ -1277,9 +1267,10 @@ async function createViewing(request, response) {
 
   // The recipient comes from the listing, never from the request body.
   const listingUuid = listingId.startsWith('listing:') ? listingId.slice('listing:'.length) : '';
-  const sellerId = UUID.test(listingUuid)
-    ? ((await pool.query('select seller_id from listings where id = $1', [listingUuid])).rows[0]?.seller_id ?? null)
-    : null;
+  const listingRow = UUID.test(listingUuid)
+    ? (await pool.query('select seller_id, title from listings where id = $1', [listingUuid])).rows[0]
+    : undefined;
+  const sellerId = listingRow?.seller_id ?? null;
 
   const { rows } = await pool.query(
     `insert into viewing_requests
@@ -1288,7 +1279,29 @@ async function createViewing(request, response) {
      returning ${VIEWING_COLUMNS}`,
     [session?.user.id ?? null, sellerId, listingId, listingTitle, name, email, description, date, time],
   );
-  sendJson(response, 201, { request: publicViewing(rows[0]) });
+  const created = publicViewing(rows[0]);
+  sendJson(response, 201, { request: created });
+  // After the answer: a slow or broken mail service must not hold up or fail it.
+  // Mails name the listing as the server knows it, not as the browser sent it.
+  void notifyViewing({ ...created, listingTitle: listingRow?.title ?? created.listingTitle }, sellerId, appOrigin(request));
+}
+
+/** Mail the seller (when the listing has one) and confirm to the visitor. */
+async function notifyViewing(created, sellerId, origin) {
+  try {
+    if (sellerId) {
+      const seller = (await pool.query('select email from users where id = $1', [sellerId])).rows[0];
+      if (seller) {
+        await sendMail({
+          to: seller.email,
+          ...viewingSellerMail({ request: created, dashboardUrl: `${origin}/#/sell` }),
+        });
+      }
+    }
+    await sendMail({ to: created.email, ...viewingVisitorMail({ request: created }) });
+  } catch (error) {
+    console.error(`viewing mail failed: ${error.name}`);
+  }
 }
 
 async function listViewings(request, response) {
