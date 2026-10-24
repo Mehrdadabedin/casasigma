@@ -37,3 +37,6 @@ android/app/src/main/res/xml/config.xml.bak
 *.tsbuildinfo
 .DS_Store
 npm-debug.log*
+
+# local mail outbox (development)
+.mail-outbox/

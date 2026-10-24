@@ -182,18 +182,20 @@ account, so a password that leaked stops working everywhere. The endpoint answer
 well-formed address — known or not — so the form cannot be used to discover who has an account,
 and requests are limited to five per IP per hour.
 
-Email goes through [Resend](https://resend.com)'s REST API from `server/mail.mjs`. Set:
+Email (password resets, and the two mails for a viewing request: one to the seller, one to the
+visitor) goes through `sendMail()` in `server/mail.mjs`. With [Resend](https://resend.com) set:
 
 | Variable | Purpose |
 | --- | --- |
 | `RESEND_API_KEY` | API key from https://resend.com/api-keys |
 | `MAIL_FROM` | sender on a domain verified in Resend, e.g. `CasaSigma <no-reply@casasigma.com>` |
-| `APP_ORIGIN` | public origin for the link, e.g. `https://casasigma.com`; without it the API uses the browser's `Origin`, then the request host |
+| `APP_ORIGIN` | public origin for links in emails, e.g. `https://casasigma.com`. **Required in production**: links never come from `Host` or `X-Forwarded-Host`, and without `APP_ORIGIN` a production server skips reset emails. On a developer machine the page's own `Origin` is used when it is localhost, otherwise `http://localhost:5173` |
 
-Without `RESEND_API_KEY` and `MAIL_FROM` the API still answers `202` and prints the reset link in
-the server log (`[mail not configured] password reset for …`), which is how the flow is exercised
-locally. A mail failure is logged and never changes the response, so an outage cannot be told
-apart from an unknown address.
+Without `RESEND_API_KEY` and `MAIL_FROM`, outside production, every mail is written as an `.html`
+and a `.txt` file to `.mail-outbox/` (git-ignored; `MAIL_OUTBOX_DIR` changes the folder), which is
+how the flows are exercised locally. With `NODE_ENV=production` and no Resend settings nothing is
+sent. The log names the kind of mail, never the address or the text. A mail failure never changes
+the response, so an outage cannot be told apart from an unknown address.
 
 ## Admin dashboard
 

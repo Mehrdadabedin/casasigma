@@ -11,7 +11,8 @@ import {
 } from 'node:crypto';
 import { promisify } from 'node:util';
 import pg from 'pg';
-import { mailConfigured, sendPasswordResetEmail } from './mail.mjs';
+import { passwordResetMail, sendMail, viewingSellerMail, viewingVisitorMail } from './mail.mjs';
+import { appOrigin, configuredOrigin, isLoopbackHost } from './origin.mjs';
 
 const { Pool } = pg;
 const scrypt = promisify(scryptCallback);
@@ -169,10 +170,6 @@ function sessionCookie(request, token, maxAge = SESSION_MAX_AGE) {
 function clientIp(request) {
   const forwarded = String(request.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
   return forwarded || request.socket.remoteAddress || 'unknown';
-}
-
-function isLoopbackHost(hostname) {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
 }
 
 /** Reject cross-site writes. Same-origin fetches send Origin; curl does not. */
@@ -353,26 +350,6 @@ function recordResetRequest(key) {
   }
 }
 
-/**
- * Where the reset link points. The browser's Origin is the page the person is
- * actually on (Vite dev serves :5173 while the API answers on :8787), so it is
- * preferred; APP_ORIGIN covers server-side callers such as curl.
- */
-function appOrigin(request) {
-  const configured = String(process.env.APP_ORIGIN ?? '').replace(/\/+$/, '');
-  if (configured) return configured;
-  const origin = request.headers.origin;
-  if (origin) {
-    try {
-      return new URL(origin).origin;
-    } catch {
-      // fall through to the request host
-    }
-  }
-  const host = String(request.headers['x-forwarded-host'] ?? request.headers.host ?? '');
-  return host ? `http://${host}` : 'http://localhost:5173';
-}
-
 async function signup(request, response) {
   if (rejectCrossOrigin(request, response)) return;
   const body = await readJson(request);
@@ -512,6 +489,14 @@ async function forgotPassword(request, response) {
   const user = rows[0];
 
   if (user) {
+    // The link's origin comes from APP_ORIGIN, never from the request headers
+    // (server/origin.mjs). Without it in production no link can be trusted.
+    const origin = appOrigin(request);
+    if (!origin) {
+      console.log('mail skipped (password-reset): APP_ORIGIN is not set');
+      sendJson(response, 202, { ok: true });
+      return;
+    }
     const token = randomBytes(32).toString('base64url');
     // One live link at a time: asking again retires the previous email.
     await pool.query('delete from password_resets where user_id = $1 and used_at is null', [
@@ -523,18 +508,8 @@ async function forgotPassword(request, response) {
       [user.id, tokenHash(token), String(RESET_TOKEN_MS)],
     );
 
-    const resetUrl = `${appOrigin(request)}/#/reset?token=${encodeURIComponent(token)}`;
-    if (mailConfigured()) {
-      try {
-        await sendPasswordResetEmail({ to: user.email, name: user.name, resetUrl });
-      } catch (error) {
-        // A mail outage must not turn into a different answer for a real
-        // address; log it and let the person ask again.
-        console.error(`password reset email to ${user.email} failed: ${error.message}`);
-      }
-    } else {
-      console.log(`[mail not configured] password reset for ${user.email}: ${resetUrl}`);
-    }
+    const resetUrl = `${origin}/#/reset?token=${encodeURIComponent(token)}`;
+    await sendMail({ to: user.email, ...passwordResetMail({ name: user.name, resetUrl }) });
   }
 
   sendJson(response, 202, { ok: true });
@@ -1277,9 +1252,10 @@ async function createViewing(request, response) {
 
   // The recipient comes from the listing, never from the request body.
   const listingUuid = listingId.startsWith('listing:') ? listingId.slice('listing:'.length) : '';
-  const sellerId = UUID.test(listingUuid)
-    ? ((await pool.query('select seller_id from listings where id = $1', [listingUuid])).rows[0]?.seller_id ?? null)
-    : null;
+  const listingRow = UUID.test(listingUuid)
+    ? (await pool.query('select seller_id, title from listings where id = $1', [listingUuid])).rows[0]
+    : undefined;
+  const sellerId = listingRow?.seller_id ?? null;
 
   const { rows } = await pool.query(
     `insert into viewing_requests
@@ -1288,7 +1264,29 @@ async function createViewing(request, response) {
      returning ${VIEWING_COLUMNS}`,
     [session?.user.id ?? null, sellerId, listingId, listingTitle, name, email, description, date, time],
   );
-  sendJson(response, 201, { request: publicViewing(rows[0]) });
+  const created = publicViewing(rows[0]);
+  sendJson(response, 201, { request: created });
+  // After the answer: a slow or broken mail service must not hold up or fail it.
+  // Mails name the listing as the server knows it, not as the browser sent it.
+  void notifyViewing({ ...created, listingTitle: listingRow?.title ?? created.listingTitle }, sellerId, appOrigin(request));
+}
+
+/** Mail the seller (when the listing has one) and confirm to the visitor. */
+async function notifyViewing(created, sellerId, origin) {
+  try {
+    if (sellerId) {
+      const seller = (await pool.query('select email from users where id = $1', [sellerId])).rows[0];
+      if (seller) {
+        await sendMail({
+          to: seller.email,
+          ...viewingSellerMail({ request: created, dashboardUrl: origin ? `${origin}/#/sell` : null }),
+        });
+      }
+    }
+    await sendMail({ to: created.email, ...viewingVisitorMail({ request: created }) });
+  } catch (error) {
+    console.error(`viewing mail failed: ${error.name}`);
+  }
 }
 
 async function listViewings(request, response) {
@@ -1834,6 +1832,9 @@ try {
   await ensureSchema();
   await pool.query('delete from sessions where expires_at < now()');
   await pool.query('delete from password_resets where expires_at < now()');
+  if (process.env.NODE_ENV === 'production' && !configuredOrigin()) {
+    console.warn('APP_ORIGIN is not set: password-reset emails are skipped and other emails carry no link');
+  }
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`media API on http://127.0.0.1:${PORT} (db: ${DATABASE_URL})`);
   });
