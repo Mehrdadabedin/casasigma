@@ -12,6 +12,7 @@ import {
 import { promisify } from 'node:util';
 import pg from 'pg';
 import { passwordResetMail, sendMail, viewingSellerMail, viewingVisitorMail } from './mail.mjs';
+import { appOrigin, configuredOrigin, isLoopbackHost } from './origin.mjs';
 
 const { Pool } = pg;
 const scrypt = promisify(scryptCallback);
@@ -169,10 +170,6 @@ function sessionCookie(request, token, maxAge = SESSION_MAX_AGE) {
 function clientIp(request) {
   const forwarded = String(request.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
   return forwarded || request.socket.remoteAddress || 'unknown';
-}
-
-function isLoopbackHost(hostname) {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
 }
 
 /** Reject cross-site writes. Same-origin fetches send Origin; curl does not. */
@@ -353,26 +350,6 @@ function recordResetRequest(key) {
   }
 }
 
-/**
- * Where the reset link points. The browser's Origin is the page the person is
- * actually on (Vite dev serves :5173 while the API answers on :8787), so it is
- * preferred; APP_ORIGIN covers server-side callers such as curl.
- */
-function appOrigin(request) {
-  const configured = String(process.env.APP_ORIGIN ?? '').replace(/\/+$/, '');
-  if (configured) return configured;
-  const origin = request.headers.origin;
-  if (origin) {
-    try {
-      return new URL(origin).origin;
-    } catch {
-      // fall through to the request host
-    }
-  }
-  const host = String(request.headers['x-forwarded-host'] ?? request.headers.host ?? '');
-  return host ? `http://${host}` : 'http://localhost:5173';
-}
-
 async function signup(request, response) {
   if (rejectCrossOrigin(request, response)) return;
   const body = await readJson(request);
@@ -512,6 +489,14 @@ async function forgotPassword(request, response) {
   const user = rows[0];
 
   if (user) {
+    // The link's origin comes from APP_ORIGIN, never from the request headers
+    // (server/origin.mjs). Without it in production no link can be trusted.
+    const origin = appOrigin(request);
+    if (!origin) {
+      console.log('mail skipped (password-reset): APP_ORIGIN is not set');
+      sendJson(response, 202, { ok: true });
+      return;
+    }
     const token = randomBytes(32).toString('base64url');
     // One live link at a time: asking again retires the previous email.
     await pool.query('delete from password_resets where user_id = $1 and used_at is null', [
@@ -523,7 +508,7 @@ async function forgotPassword(request, response) {
       [user.id, tokenHash(token), String(RESET_TOKEN_MS)],
     );
 
-    const resetUrl = `${appOrigin(request)}/#/reset?token=${encodeURIComponent(token)}`;
+    const resetUrl = `${origin}/#/reset?token=${encodeURIComponent(token)}`;
     await sendMail({ to: user.email, ...passwordResetMail({ name: user.name, resetUrl }) });
   }
 
@@ -1294,7 +1279,7 @@ async function notifyViewing(created, sellerId, origin) {
       if (seller) {
         await sendMail({
           to: seller.email,
-          ...viewingSellerMail({ request: created, dashboardUrl: `${origin}/#/sell` }),
+          ...viewingSellerMail({ request: created, dashboardUrl: origin ? `${origin}/#/sell` : null }),
         });
       }
     }
@@ -1847,6 +1832,9 @@ try {
   await ensureSchema();
   await pool.query('delete from sessions where expires_at < now()');
   await pool.query('delete from password_resets where expires_at < now()');
+  if (process.env.NODE_ENV === 'production' && !configuredOrigin()) {
+    console.warn('APP_ORIGIN is not set: password-reset emails are skipped and other emails carry no link');
+  }
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`media API on http://127.0.0.1:${PORT} (db: ${DATABASE_URL})`);
   });

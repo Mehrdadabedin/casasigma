@@ -189,7 +189,7 @@ visitor) goes through `sendMail()` in `server/mail.mjs`. With [Resend](https://r
 | --- | --- |
 | `RESEND_API_KEY` | API key from https://resend.com/api-keys |
 | `MAIL_FROM` | sender on a domain verified in Resend, e.g. `CasaSigma <no-reply@casasigma.com>` |
-| `APP_ORIGIN` | public origin for the link, e.g. `https://casasigma.com`; without it the API uses the browser's `Origin`, then the request host |
+| `APP_ORIGIN` | public origin for links in emails, e.g. `https://casasigma.com`. **Required in production**: links never come from `Host` or `X-Forwarded-Host`, and without `APP_ORIGIN` a production server skips reset emails. On a developer machine the page's own `Origin` is used when it is localhost, otherwise `http://localhost:5173` |
 
 Without `RESEND_API_KEY` and `MAIL_FROM`, outside production, every mail is written as an `.html`
 and a `.txt` file to `.mail-outbox/` (git-ignored; `MAIL_OUTBOX_DIR` changes the folder), which is

@@ -129,6 +129,7 @@ function when(request) {
 }
 
 /** To the seller: who wants to see which listing, and when. */
+/** `dashboardUrl` is null when no trusted origin is known (production without APP_ORIGIN). */
 export function viewingSellerMail({ request, dashboardUrl }) {
   const text = [
     'You have a new viewing request on CasaSigma.',
@@ -138,7 +139,7 @@ export function viewingSellerMail({ request, dashboardUrl }) {
     `Visitor: ${request.name} <${request.email}>`,
     request.description ? `Message: ${request.description}` : '',
     '',
-    `Confirm or decline it in your dashboard: ${dashboardUrl}`,
+    dashboardUrl ? `Confirm or decline it in your dashboard: ${dashboardUrl}` : 'Confirm or decline it in your CasaSigma dashboard.',
   ]
     .filter((line, index, all) => line !== '' || all[index - 1] !== '')
     .join('\n');
@@ -148,7 +149,7 @@ export function viewingSellerMail({ request, dashboardUrl }) {
       p(`<strong>${esc(request.name)}</strong> would like to see <strong>${esc(request.listingTitle)}</strong>.`) +
       p(`When: ${esc(when(request))}<br />Email: ${esc(request.email)}`) +
       (request.description ? p(`Message: ${esc(request.description)}`) : '') +
-      button(dashboardUrl, 'Open your dashboard'),
+      (dashboardUrl ? button(dashboardUrl, 'Open your dashboard') : p('Confirm or decline it in your CasaSigma dashboard.')),
   });
   return { kind: 'viewing-seller', subject: `Viewing request: ${request.listingTitle}`, text, html };
 }
