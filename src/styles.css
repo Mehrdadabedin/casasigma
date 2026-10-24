@@ -3027,6 +3027,73 @@ a.topbar__name:hover {
   }
 }
 
+.sell__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sell__bar h1 {
+  font-family: var(--serif);
+  font-size: clamp(1.4rem, 4vw, 1.9rem);
+}
+
+.sell__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sell__item {
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.sell__cover {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--line);
+  font-size: 0.66rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.sell__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sell__item-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sell__count {
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.sell__item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sell__confirm {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 /* ---------- fresh listings ---------- */
 
 .fresh {

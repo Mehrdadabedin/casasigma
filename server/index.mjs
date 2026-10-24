@@ -859,14 +859,8 @@ const LISTING_KINDS = new Set(['Apartment', 'House', 'Loft', 'Villa', 'Restauran
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-async function createListing(request, response) {
-  const user = await currentUser(request, response);
-  if (!user) return;
-  if (!user.canSell) {
-    sendJson(response, 403, { error: 'selling permission is not enabled for this account' });
-    return;
-  }
-
+/** Read and validate listing fields from the body; writes the 400 itself. */
+async function readListingInput(request, response) {
   const body = await readJson(request);
   const title = String(body.title ?? '').trim();
   const kind = String(body.kind ?? '').trim();
@@ -896,6 +890,20 @@ async function createListing(request, response) {
     sendJson(response, 400, { error: 'Keep the description under 2000 characters.', field: 'description' });
     return;
   }
+  return { title, kind, city, price, description };
+}
+
+async function createListing(request, response) {
+  const user = await currentUser(request, response);
+  if (!user) return;
+  if (!user.canSell) {
+    sendJson(response, 403, { error: 'selling permission is not enabled for this account' });
+    return;
+  }
+
+  const input = await readListingInput(request, response);
+  if (!input) return;
+  const { title, kind, city, price, description } = input;
 
   const client = await pool.connect();
   try {
@@ -922,6 +930,57 @@ async function createListing(request, response) {
   } finally {
     client.release();
   }
+}
+
+async function sellerForListingWrite(request, response) {
+  const user = await currentUser(request, response);
+  if (!user) return null;
+  if (!user.canSell) {
+    sendJson(response, 403, { error: 'selling permission is not enabled for this account' });
+    return null;
+  }
+  return user;
+}
+
+async function updateListing(listingId, request, response) {
+  const user = await sellerForListingWrite(request, response);
+  if (!user) return;
+  const row = await ownedListing(listingId, user, response);
+  if (!row) return;
+  const input = await readListingInput(request, response);
+  if (!input) return;
+
+  await pool.query('insert into cities (name) values ($1) on conflict (lower(name)) do nothing', [input.city]);
+  await pool.query(
+    `update listings set title = $2, kind = $3, city = $4, price = $5, description = $6
+      where id = $1`,
+    [row.id, input.title, input.kind, input.city, input.price, input.description],
+  );
+  sendJson(response, 200, { listing: await reloadListing(row.id) });
+}
+
+async function deleteListing(listingId, request, response) {
+  const user = await sellerForListingWrite(request, response);
+  if (!user) return;
+  const row = await ownedListing(listingId, user, response);
+  if (!row) return;
+
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query(
+      'delete from media where slug in (select media_slug from listing_photos where listing_id = $1)',
+      [row.id],
+    );
+    await client.query('delete from listings where id = $1', [row.id]);
+    await client.query('commit');
+  } catch (error) {
+    await client.query('rollback').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+  sendJson(response, 200, { ok: true });
 }
 
 async function listListings(request, response, url) {
@@ -1504,6 +1563,18 @@ async function route(request, response) {
   if (listingMatch && method === 'GET') {
     if (!(await currentUser(request, response))) return;
     await getListing(decodeURIComponent(listingMatch[1]), response);
+    return;
+  }
+
+  if (listingMatch && method === 'PATCH') {
+    if (rejectCrossOrigin(request, response)) return;
+    await updateListing(decodeURIComponent(listingMatch[1]), request, response);
+    return;
+  }
+
+  if (listingMatch && method === 'DELETE') {
+    if (rejectCrossOrigin(request, response)) return;
+    await deleteListing(decodeURIComponent(listingMatch[1]), request, response);
     return;
   }
 
