@@ -310,12 +310,11 @@ button {
   );
 }
 
-/* The Book header uses the client's Puerto Marina photograph. It is a 1285×1920
-   portrait, so the crop is biased to `center 16%`: the white harbour building
-   and its towers against the blue sky, which is the shot the client asked for. */
+/* The Book header shares the credited Puerto Banús street photo with
+   Restaurants (see public/images/CREDITS.md). Only photos with a licence that
+   allows reuse go here, never one copied from a search engine. */
 .pagehead--plans::before {
-  background-image: url('/images/puertomarina.jpg');
-  background-position: center 16%;
+  background-image: url('/images/plans-street.webp');
   mask-image: linear-gradient(
     90deg,
     transparent 0%,
