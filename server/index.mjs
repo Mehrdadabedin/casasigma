@@ -1212,12 +1212,18 @@ async function createViewing(request, response) {
     return;
   }
 
+  // The recipient comes from the listing, never from the request body.
+  const listingUuid = listingId.startsWith('listing:') ? listingId.slice('listing:'.length) : '';
+  const sellerId = UUID.test(listingUuid)
+    ? ((await pool.query('select seller_id from listings where id = $1', [listingUuid])).rows[0]?.seller_id ?? null)
+    : null;
+
   const { rows } = await pool.query(
     `insert into viewing_requests
-       (user_id, listing_id, listing_title, name, email, description, visit_date, visit_time)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)
+       (user_id, seller_id, listing_id, listing_title, name, email, description, visit_date, visit_time)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      returning ${VIEWING_COLUMNS}`,
-    [session?.user.id ?? null, listingId, listingTitle, name, email, description, date, time],
+    [session?.user.id ?? null, sellerId, listingId, listingTitle, name, email, description, date, time],
   );
   sendJson(response, 201, { request: publicViewing(rows[0]) });
 }
@@ -1254,6 +1260,45 @@ async function cancelViewing(requestId, request, response) {
       where id = $1 and user_id = $2
       returning ${VIEWING_COLUMNS}`,
     [requestId, user.id],
+  );
+  if (!rows[0]) {
+    sendJson(response, 404, { error: 'no such viewing request' });
+    return;
+  }
+  sendJson(response, 200, { request: publicViewing(rows[0]) });
+}
+
+async function listSellerViewings(request, response) {
+  const user = await sellerForListingWrite(request, response);
+  if (!user) return;
+  const { rows } = await pool.query(
+    `select ${VIEWING_COLUMNS} from viewing_requests
+      where seller_id = $1
+      order by visit_date asc, visit_time asc, created_at desc
+      limit 500`,
+    [user.id],
+  );
+  sendJson(response, 200, { requests: rows.map(publicViewing) });
+}
+
+async function answerSellerViewing(requestId, request, response) {
+  if (!UUID.test(requestId)) {
+    sendJson(response, 400, { error: 'invalid request id' });
+    return;
+  }
+  const body = await readJson(request);
+  if (body.status !== 'Confirmed' && body.status !== 'Cancelled') {
+    sendJson(response, 400, { error: 'Choose Confirmed or Cancelled.', field: 'status' });
+    return;
+  }
+  const user = await sellerForListingWrite(request, response);
+  if (!user) return;
+
+  const { rows } = await pool.query(
+    `update viewing_requests set status = $3
+      where id = $1 and seller_id = $2
+      returning ${VIEWING_COLUMNS}`,
+    [requestId, user.id, body.status],
   );
   if (!rows[0]) {
     sendJson(response, 404, { error: 'no such viewing request' });
@@ -1605,6 +1650,18 @@ async function route(request, response) {
   if (pathname === '/api/viewings' && method === 'POST') {
     if (rejectCrossOrigin(request, response)) return;
     await createViewing(request, response);
+    return;
+  }
+
+  if (pathname === '/api/seller/viewings' && method === 'GET') {
+    await listSellerViewings(request, response);
+    return;
+  }
+
+  const sellerViewingMatch = pathname.match(/^\/api\/seller\/viewings\/([^/]+)$/);
+  if (sellerViewingMatch && method === 'PATCH') {
+    if (rejectCrossOrigin(request, response)) return;
+    await answerSellerViewing(decodeURIComponent(sellerViewingMatch[1]), request, response);
     return;
   }
 

@@ -5,7 +5,16 @@ import { useI18n } from '../state/LanguageProvider';
 import { formatPrice } from '../lib/format';
 import { shrinkImage } from '../lib/image';
 import { PinIcon } from '../components/icons';
-import { ApiError, cityApi, listingApi, PHOTO_SLOTS, type Listing } from '../lib/api';
+import {
+  ApiError,
+  cityApi,
+  listingApi,
+  PHOTO_SLOTS,
+  sellerViewingApi,
+  type Listing,
+  type ViewingRequest,
+} from '../lib/api';
+import { formatDay } from '../lib/format';
 
 const coverSlug = (listing: Listing) =>
   [...listing.photos].sort((a, b) => a.slot - b.slot)[0]?.slug;
@@ -415,14 +424,16 @@ function ListingForm({
 /** One row of "My listings": cover, title, price, photo count, edit and delete. */
 export function ListingRow({
   listing,
+  requestCount = 0,
   onEdit,
   onDelete,
 }: {
   listing: Listing;
+  requestCount?: number;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, tp } = useI18n();
   const cover = coverSlug(listing);
   const [confirming, setConfirming] = useState(false);
 
@@ -448,7 +459,8 @@ export function ListingRow({
           <PinIcon width={13} height={13} /> {listing.city} · {listing.kind}
         </span>
         <span className="sell__count">
-          {t('sell.photoCount', { n: listing.photos.length, max: PHOTO_SLOTS })}
+          {t('sell.photoCount', { n: listing.photos.length, max: PHOTO_SLOTS })} ·{' '}
+          {tp('sell.requestCount', requestCount)}
         </span>
         <div className="sell__item-actions">
           {confirming ? (
@@ -485,6 +497,50 @@ export function ListingRow({
   );
 }
 
+/** One viewing request with the visitor's details and the seller's answer. */
+export function RequestCard({
+  request,
+  onAnswer,
+}: {
+  request: ViewingRequest;
+  onAnswer: (status: 'Confirmed' | 'Cancelled') => void;
+}) {
+  const { t, locale } = useI18n();
+  return (
+    <li className="sell__request">
+      <div className="sell__request-head">
+        <strong>{request.listingTitle}</strong>
+        <span className={`sell__status sell__status--${request.status}`}>
+          {t(`status.${request.status}`)}
+        </span>
+      </div>
+      <span className="sell__place">
+        {formatDay(request.date, locale)} · {request.time}
+      </span>
+      <span className="sell__request-who">
+        {request.name} · <a href={`mailto:${request.email}`}>{request.email}</a>
+      </span>
+      {request.description && <p className="sell__request-note">{request.description}</p>}
+      {request.status !== 'Cancelled' && (
+        <div className="sell__item-actions">
+          {request.status === 'Requested' && (
+            <button className="button button--small" type="button" onClick={() => onAnswer('Confirmed')}>
+              {t('sell.confirm')}
+            </button>
+          )}
+          <button
+            className="button button--ghost button--small"
+            type="button"
+            onClick={() => onAnswer('Cancelled')}
+          >
+            {t('sell.decline')}
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}
+
 /** What a signed-in buyer sees at /sell instead of the dashboard. */
 export function SellerOnly() {
   const { t } = useI18n();
@@ -514,6 +570,8 @@ export function Sell() {
   const [editing, setEditing] = useState<string | null>(null);
   const [notice, setNotice] = useState<Listing | null>(null);
   const [deleteError, setDeleteError] = useState('');
+  const [requests, setRequests] = useState<ViewingRequest[]>([]);
+  const [requestError, setRequestError] = useState('');
 
   const loadCities = () =>
     cityApi
@@ -528,6 +586,10 @@ export function Sell() {
       .mine()
       .then(setMine)
       .catch(() => setMine([]));
+    sellerViewingApi
+      .list()
+      .then(setRequests)
+      .catch(() => setRequests([]));
   }, [user]);
 
   if (!ready) {
@@ -547,6 +609,16 @@ export function Sell() {
     else replaceListing(next);
     setNotice(isNew ? next : null);
     void loadCities();
+  }
+
+  async function answer(request: ViewingRequest, status: 'Confirmed' | 'Cancelled') {
+    setRequestError('');
+    try {
+      const updated = await sellerViewingApi.answer(request.id, status);
+      setRequests((current) => current.map((row) => (row.id === updated.id ? updated : row)));
+    } catch {
+      setRequestError(t('sell.errorAnswer'));
+    }
   }
 
   async function onDelete(listing: Listing) {
@@ -627,11 +699,36 @@ export function Sell() {
                 <ListingRow
                   key={listing.id}
                   listing={listing}
+                  requestCount={
+                    requests.filter((row) => row.listingId === `listing:${listing.id}`).length
+                  }
                   onEdit={() => {
                     setNotice(null);
                     setEditing(listing.id);
                   }}
                   onDelete={() => void onDelete(listing)}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="sell__mine" aria-label={t('sell.requestsTitle')}>
+          <h2>{t('sell.requestsTitle')}</h2>
+          {requestError && (
+            <p className="formerror" role="alert">
+              {requestError}
+            </p>
+          )}
+          {requests.length === 0 ? (
+            <p className="book__hint">{t('sell.requestsEmpty')}</p>
+          ) : (
+            <ul className="sell__list sell__requests">
+              {requests.map((request) => (
+                <RequestCard
+                  key={request.id}
+                  request={request}
+                  onAnswer={(status) => void answer(request, status)}
                 />
               ))}
             </ul>

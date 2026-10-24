@@ -202,6 +202,26 @@ create table if not exists viewing_requests (
 create index if not exists viewing_requests_user_idx
   on viewing_requests (user_id, visit_date, visit_time);
 
+-- The seller who receives the request, set by the server from the listing.
+-- Requests for the demo catalogue keep it null.
+alter table viewing_requests
+  add column if not exists seller_id uuid references users(id) on delete set null;
+
+create index if not exists viewing_requests_seller_idx
+  on viewing_requests (seller_id, visit_date, visit_time);
+
+-- Requests sent before the column existed: link the ones for seller listings.
+do $$
+begin
+  if not exists (select 1 from schema_migrations where id = 'viewing-seller-id-v1') then
+    update viewing_requests v set seller_id = l.seller_id
+      from listings l
+     where v.seller_id is null
+       and v.listing_id = 'listing:' || l.id::text;
+    insert into schema_migrations (id) values ('viewing-seller-id-v1');
+  end if;
+end $$;
+
 comment on table viewing_requests is 'Viewing requests from /book, one row per request.';
 
 -- Buyer and seller profiles, with a photo the admin approves.
