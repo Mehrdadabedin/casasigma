@@ -468,7 +468,7 @@ export function Sell() {
                     <Link className="sell__item-title" to={`/listings/${listing.id}`}>
                       {listing.title}
                     </Link>
-                    <span className="sell__price">{formatPrice(listing.price)}</span>
+                    {listing.price !== undefined && <span className="sell__price">{formatPrice(listing.price)}</span>}
                   </div>
                   <span className="sell__place">
                     <PinIcon width={13} height={13} /> {listing.city} · {listing.kind}

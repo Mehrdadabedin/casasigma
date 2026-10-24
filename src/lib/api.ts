@@ -112,10 +112,12 @@ export interface Listing {
   title: string;
   kind: string;
   city: string;
-  price: number;
-  description: string;
-  sellerName: string | null;
-  /** Ordered by slot; the first slot present is the cover. */
+  /** Absent for a signed-out visitor (MKT1.3); `locked` is then true. */
+  price?: number;
+  description?: string;
+  sellerName?: string | null;
+  locked?: boolean;
+  /** Ordered by slot; the first slot present is the cover. Empty for a guest. */
   photos: ListingPhotoRef[];
   createdAt: string;
 }

@@ -90,14 +90,16 @@ export async function startServer() {
 export function client(baseUrl) {
   let cookie = '';
   return async function request(path, { method = 'GET', body, headers = {} } = {}) {
+    // Bytes (a photo upload) go as they are; anything else is sent as JSON.
+    const raw = body instanceof Uint8Array;
     const response = await fetch(`${baseUrl}${path}`, {
       method,
       headers: {
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...(body === undefined || raw ? {} : { 'content-type': 'application/json' }),
         ...(cookie ? { cookie } : {}),
         ...headers,
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined || raw ? body : JSON.stringify(body),
     });
     const setCookie = response.headers.get('set-cookie');
     if (setCookie) cookie = setCookie.split(';')[0];

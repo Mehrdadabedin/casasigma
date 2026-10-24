@@ -27,6 +27,23 @@ export function LockedBadge() {
 }
 
 /**
+ * The text half of a locked card (MKT1.2). It shows placeholders instead of the
+ * real price and address, so a guest's page never holds them, blurred or not.
+ */
+export function LockedCardBody({ kind, city }: { kind: string; city: string }) {
+  const { t } = useI18n();
+  return (
+    <div className="card__body card__body--locked" aria-hidden="true">
+      <div className="card__price">{t('gate.pricePlaceholder')}</div>
+      <h3 className="card__title">{t('gate.addressPlaceholder')}</h3>
+      <p className="card__meta">
+        {kind} · {city}
+      </p>
+    </div>
+  );
+}
+
+/**
  * A detail route for a signed-out visitor: the cover blurred out and a panel
  * asking them to sign in. The media is passed in so the caller keeps control of
  * which photograph (or gradient) is behind the blur.
