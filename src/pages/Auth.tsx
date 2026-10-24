@@ -3,14 +3,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../state/AuthProvider';
 import { useI18n } from '../state/LanguageProvider';
 import { ApiError, authApi, type Role } from '../lib/api';
+import { HOME_PATH, landing, safeNext } from '../lib/landing';
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon } from '../components/icons';
-
-/** Only allow in-app paths, so `?next=` cannot become an open redirect. */
-function safeNext(raw: string | null): string {
-  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return '/homes';
-  if (raw.startsWith('/login') || raw.startsWith('/signup')) return '/homes';
-  return raw;
-}
 
 function useNextPath(): string {
   const [params] = useSearchParams();
@@ -26,7 +20,7 @@ export function AuthShell({
   active,
   title,
   lede,
-  next = '/homes',
+  next = HOME_PATH,
   children,
 }: {
   /** `forgot` and `reset` are auth screens without the sign-in/sign-up tabs. */
@@ -94,23 +88,6 @@ function errorMessage(error: unknown, t: (key: string) => string): string {
     if (error.field === 'password') return t('auth.errorPassword');
   }
   return t('auth.errorGeneric');
-}
-
-/**
- * Admins land on the dashboard, or on the credential step while they still use
- * the starter password. Sellers land in the studio where listings and their
- * photos live; everyone else lands on the page they asked for.
- */
-function landing(user: { role: Role; mustSetPassword: boolean } | null | undefined, next: string) {
-  if (user?.role === 'admin') {
-    if (user.mustSetPassword) return '/admin/credentials';
-    // An admin has no public profile, so “Your profile” must not land on that
-    // notice — the dashboard is the only useful destination for them.
-    if (next === '/homes' || next === '/profile') return '/admin';
-    return next;
-  }
-  if (user?.role === 'seller' && next === '/homes') return '/sell';
-  return next;
 }
 
 export function LoginPage() {
