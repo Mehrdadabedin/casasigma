@@ -450,7 +450,7 @@ const en: Dict = {
   'sell.browse': 'Browse homes',
   'sell.photosTitle': 'Photos',
   'sell.photosSub':
-    'Add up to four photos. The first one is the cover in search and on the listing page.',
+    'Add up to five photos. The first one is the cover in search and on the listing page.',
   'sell.addPhoto': 'Add photo',
   'sell.replacePhoto': 'Replace photo',
   'sell.removePhoto': 'Remove photo',
@@ -953,7 +953,7 @@ const es: Dict = {
   'sell.browse': 'Ver casas',
   'sell.photosTitle': 'Fotos',
   'sell.photosSub':
-    'Añade hasta cuatro fotos. La primera es la portada en las búsquedas y en la página del anuncio.',
+    'Añade hasta cinco fotos. La primera es la portada en las búsquedas y en la página del anuncio.',
   'sell.addPhoto': 'Añadir foto',
   'sell.replacePhoto': 'Cambiar foto',
   'sell.removePhoto': 'Quitar foto',
@@ -1458,7 +1458,7 @@ const nl: Dict = {
   'sell.browse': 'Huizen bekijken',
   'sell.photosTitle': 'Foto’s',
   'sell.photosSub':
-    'Voeg maximaal vier foto’s toe. De eerste is de omslagfoto in de zoekresultaten en op de pagina van de woning.',
+    'Voeg maximaal vijf foto’s toe. De eerste is de omslagfoto in de zoekresultaten en op de pagina van de woning.',
   'sell.addPhoto': 'Foto toevoegen',
   'sell.replacePhoto': 'Foto vervangen',
   'sell.removePhoto': 'Foto verwijderen',
@@ -1959,7 +1959,7 @@ const da: Dict = {
   'sell.browse': 'Se boliger',
   'sell.photosTitle': 'Fotos',
   'sell.photosSub':
-    'Tilføj op til fire fotos. Det første er forsiden i søgningen og på boligens side.',
+    'Tilføj op til fem fotos. Det første er forsiden i søgningen og på boligens side.',
   'sell.addPhoto': 'Tilføj foto',
   'sell.replacePhoto': 'Udskift foto',
   'sell.removePhoto': 'Fjern foto',

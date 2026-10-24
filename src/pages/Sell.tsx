@@ -5,20 +5,20 @@ import { useI18n } from '../state/LanguageProvider';
 import { formatPrice } from '../lib/format';
 import { shrinkImage } from '../lib/image';
 import { PinIcon } from '../components/icons';
-import { ApiError, cityApi, listingApi, type Listing } from '../lib/api';
+import { ApiError, cityApi, listingApi, PHOTO_SLOTS, type Listing } from '../lib/api';
 
 const kinds = ['House', 'Apartment', 'Loft', 'Villa', 'Restaurant'] as const;
-const SLOTS = [1, 2, 3, 4];
+const SLOTS = Array.from({ length: PHOTO_SLOTS }, (_, index) => index + 1);
 
 type Draft = { file: File; url: string };
 
 /**
- * Four photo slots. Empty slots open a file picker; a filled slot can be
+ * Five photo slots. Empty slots open a file picker; a filled slot can be
  * replaced by clicking it and removed with the × in the corner. The parent
  * decides what the bytes mean: a pending file before publishing, an upload
  * afterwards.
  */
-function PhotoSlotGrid({
+export function PhotoSlotGrid({
   photos,
   onPick,
   onClear,
@@ -178,7 +178,7 @@ export function Sell() {
   const [city, setCity] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
-  const [drafts, setDrafts] = useState<(Draft | null)[]>([null, null, null, null]);
+  const [drafts, setDrafts] = useState<(Draft | null)[]>(Array(PHOTO_SLOTS).fill(null));
   const [error, setError] = useState('');
   const [photoError, setPhotoError] = useState('');
   const [pending, setPending] = useState(false);
@@ -254,7 +254,7 @@ export function Sell() {
   function resetDrafts() {
     draftUrls.current.forEach((url) => URL.revokeObjectURL(url));
     draftUrls.current.clear();
-    setDrafts([null, null, null, null]);
+    setDrafts(Array(PHOTO_SLOTS).fill(null));
   }
 
   function replaceListing(next: Listing) {
