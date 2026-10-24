@@ -183,6 +183,7 @@ const en: Dict = {
   'gate.lede':
     'Prices, photographs and the seller’s details are for signed-in accounts. Creating one takes a minute.',
   'gate.cta': 'Sign in to continue',
+  'gate.book': 'Book a viewing without an account',
   'gate.pricePlaceholder': 'Price after sign-in',
   'gate.addressPlaceholder': 'Address after sign-in',
 
@@ -696,6 +697,7 @@ const es: Dict = {
   'gate.lede':
     'Los precios, las fotos y los datos del vendedor son para cuentas registradas. Crear una lleva un minuto.',
   'gate.cta': 'Inicia sesión para continuar',
+  'gate.book': 'Reserva una visita sin cuenta',
   'gate.pricePlaceholder': 'Precio al iniciar sesión',
   'gate.addressPlaceholder': 'Dirección al iniciar sesión',
 
@@ -1201,6 +1203,7 @@ const nl: Dict = {
   'gate.lede':
     'Prijzen, foto’s en gegevens van de verkoper zijn voor ingelogde accounts. Een account maken duurt een minuut.',
   'gate.cta': 'Log in om verder te gaan',
+  'gate.book': 'Boek een bezichtiging zonder account',
   'gate.pricePlaceholder': 'Prijs na inloggen',
   'gate.addressPlaceholder': 'Adres na inloggen',
 
@@ -1707,6 +1710,7 @@ const da: Dict = {
   'gate.lede':
     'Priser, fotos og sælgerens oplysninger er for konti, der er logget ind. Det tager et minut at oprette en.',
   'gate.cta': 'Log ind for at fortsætte',
+  'gate.book': 'Book en fremvisning uden konto',
   'gate.pricePlaceholder': 'Pris efter login',
   'gate.addressPlaceholder': 'Adresse efter login',
 

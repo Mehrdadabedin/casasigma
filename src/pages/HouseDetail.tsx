@@ -61,6 +61,7 @@ export function HouseDetail() {
         media={<Photo gradient={house.gradient} label={house.title} className="photo--hero" />}
         backTo="/homes"
         backLabel={t('house.all')}
+        bookTo={`/book?listing=house:${house.id}`}
       />
     );
   }

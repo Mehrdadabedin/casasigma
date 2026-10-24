@@ -770,8 +770,18 @@ button {
   color: var(--ink-soft);
 }
 
-.locked-detail__panel .button {
+.locked-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
   margin-top: 6px;
+}
+
+@media (max-width: 600px) {
+  .locked-detail__media .photo {
+    min-height: 420px;
+  }
 }
 
 .locked-detail__icon {

@@ -37,6 +37,7 @@ export function RestaurantDetail() {
         }
         backTo="/restaurants"
         backLabel={t('restaurant.all')}
+        bookTo={`/book?listing=restaurant:${restaurant.id}`}
       />
     );
   }
