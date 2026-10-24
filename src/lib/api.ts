@@ -1,5 +1,8 @@
 export type Role = 'buyer' | 'seller' | 'admin';
 
+/** Photo slots per listing; slot 1 is the cover. */
+export const PHOTO_SLOTS = 5;
+
 export interface SessionUser {
   id: string;
   email: string;
@@ -101,7 +104,7 @@ export interface City {
 }
 
 export interface ListingPhotoRef {
-  /** Fixed slot 1–4; removing one leaves the others in their slots. */
+  /** Fixed slot 1–5; removing one leaves the others in their slots. */
   slot: number;
   /** Media slug served at `api/media/:slug`. */
   slug: string;
@@ -213,7 +216,7 @@ export const listingApi = {
     request<{ listing: Listing }>(`/api/listings/${encodeURIComponent(id)}`).then(
       (data) => data.listing,
     ),
-  /** Store a photo in slot 1–4; replacing a slot deletes the previous file. */
+  /** Store a photo in slot 1–5; replacing a slot deletes the previous file. */
   uploadPhoto: async (id: string, slot: number, blob: Blob): Promise<Listing> => {
     const response = await fetch(
       `/api/listings/${encodeURIComponent(id)}/photos?slot=${slot}`,

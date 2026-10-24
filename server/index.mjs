@@ -25,6 +25,8 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_JSON_BYTES = 64 * 1024;
 const SLUG = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Photo slots per listing; slot 1 is the cover. Keep in step with db/schema.sql. */
+const MAX_PHOTO_SLOTS = 5;
 const MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/avif']);
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const ROLES = new Set(['buyer', 'seller']);
@@ -985,7 +987,7 @@ async function ownedListing(listingId, user, response) {
     return null;
   }
   if (row.seller_id !== user.id) {
-    sendJson(response, 403, { error: 'this listing belongs to another account' });
+    sendJson(response, 404, { error: 'no such listing' });
     return null;
   }
   return row;
@@ -1002,7 +1004,7 @@ async function reloadListing(listingId) {
 }
 
 /**
- * Store one of the four listing photos and point its slot at the new file. The
+ * Store one of the five listing photos and point its slot at the new file. The
  * old slug in that slot is deleted afterwards, so a replacement leaves no
  * orphaned bytes in `media`.
  */
@@ -1015,8 +1017,8 @@ async function uploadListingPhoto(listingId, request, response, url) {
   }
 
   const slot = Number(url.searchParams.get('slot'));
-  if (!Number.isInteger(slot) || slot < 1 || slot > 4) {
-    sendJson(response, 400, { error: 'slot must be 1, 2, 3 or 4', field: 'slot' });
+  if (!Number.isInteger(slot) || slot < 1 || slot > MAX_PHOTO_SLOTS) {
+    sendJson(response, 400, { error: `slot must be a whole number from 1 to ${MAX_PHOTO_SLOTS}`, field: 'slot' });
     return;
   }
 
@@ -1072,8 +1074,8 @@ async function removeListingPhoto(listingId, slot, request, response) {
   if (!user) return;
 
   const position = Number(slot);
-  if (!Number.isInteger(position) || position < 1 || position > 4) {
-    sendJson(response, 400, { error: 'slot must be 1, 2, 3 or 4', field: 'slot' });
+  if (!Number.isInteger(position) || position < 1 || position > MAX_PHOTO_SLOTS) {
+    sendJson(response, 400, { error: `slot must be a whole number from 1 to ${MAX_PHOTO_SLOTS}`, field: 'slot' });
     return;
   }
 
