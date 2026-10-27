@@ -91,6 +91,8 @@ export async function startServer(env = {}) {
         /** Files in the outbox, oldest first. */
         mails: () => readdirSync(outbox).sort(),
         mail: (name) => readFileSync(join(outbox, name), 'utf8'),
+        /** Everything the server has printed so far. */
+        output: () => output,
         async stop() {
           if (child.exitCode === null) child.kill('SIGTERM');
           await exited;

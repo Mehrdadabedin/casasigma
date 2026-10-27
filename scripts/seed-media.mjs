@@ -2,12 +2,12 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import pg from 'pg';
+import { assertSchema, databaseConfig } from '../server/db.mjs';
 
 const { Pool } = pg;
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgres://casasigma@127.0.0.1:5434/casasigma';
+const { schema: DATABASE_SCHEMA, ...DATABASE } = databaseConfig();
 
 const assets = [
   ['brand-logo', 'public/brand/casasigma-wordmark.png', 'image/png'],
@@ -15,9 +15,10 @@ const assets = [
   ['brand-icon', 'public/brand/casasigma-icon.png', 'image/png'],
 ];
 
-const pool = new Pool({ connectionString: DATABASE_URL });
+const pool = new Pool(DATABASE);
 
 try {
+  await assertSchema(pool, DATABASE_SCHEMA);
   for (const [slug, file, mime] of assets) {
     const bytes = await readFile(join(ROOT, file));
     const { rows } = await pool.query(

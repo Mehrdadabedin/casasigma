@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
@@ -13,6 +13,8 @@ import { promisify } from 'node:util';
 import pg from 'pg';
 import { passwordResetMail, sendMail, viewingSellerMail, viewingVisitorMail } from './mail.mjs';
 import { appOrigin, configuredOrigin, isLoopbackHost } from './origin.mjs';
+import { assertSchema, databaseConfig, redactedUrl } from './db.mjs';
+import { serveWeb, webRoot } from './web.mjs';
 
 const { Pool } = pg;
 const scrypt = promisify(scryptCallback);
@@ -21,8 +23,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // API_PORT, not PORT: `PORT=0` is common in hosted shells and would bind a
 // random port the Vite proxy cannot reach.
 const PORT = Number(process.env.API_PORT ?? 8787);
-const DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgres://casasigma@127.0.0.1:5434/casasigma';
+// Loopback unless told otherwise; a hosted service (Render) sets 0.0.0.0.
+const HOST = process.env.API_HOST || '127.0.0.1';
+const WEB_ROOT = webRoot(ROOT);
+const { schema: DATABASE_SCHEMA, ...DATABASE } = databaseConfig();
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_JSON_BYTES = 64 * 1024;
 const SLUG = /^[a-z0-9][a-z0-9-]{1,63}$/;
@@ -58,7 +62,7 @@ const VIEWING_MAX_PER_IP = 20;
 const viewingByEmail = new Map();
 const viewingByIp = new Map();
 
-const pool = new Pool({ connectionString: DATABASE_URL, max: 4 });
+const pool = new Pool({ ...DATABASE, max: 4 });
 const loginFailures = new Map();
 const resetRequests = new Map();
 
@@ -1574,6 +1578,11 @@ async function route(request, response) {
   const { pathname } = url;
   const method = request.method ?? 'GET';
 
+  if (WEB_ROOT && pathname !== '/api' && !pathname.startsWith('/api/')) {
+    await serveWeb(WEB_ROOT, request, response, pathname);
+    return;
+  }
+
   if (pathname === '/api/health') {
     const { rows } = await pool.query(
       'select now() as time, (select count(*)::int from media) as media, (select count(*)::int from users) as users',
@@ -1829,14 +1838,26 @@ const server = createServer((request, response) => {
 });
 
 try {
+  await assertSchema(pool, DATABASE_SCHEMA);
   await ensureSchema();
   await pool.query('delete from sessions where expires_at < now()');
   await pool.query('delete from password_resets where expires_at < now()');
   if (process.env.NODE_ENV === 'production' && !configuredOrigin()) {
     console.warn('APP_ORIGIN is not set: password-reset emails are skipped and other emails carry no link');
   }
-  server.listen(PORT, '127.0.0.1', () => {
-    console.log(`media API on http://127.0.0.1:${PORT} (db: ${DATABASE_URL})`);
+  if (WEB_ROOT) {
+    try {
+      await access(join(WEB_ROOT, 'index.html'));
+    } catch {
+      console.warn(`no web build in ${WEB_ROOT}: run npm run build`);
+    }
+  }
+  server.listen(PORT, HOST, () => {
+    const schema = DATABASE_SCHEMA ? `, schema: ${DATABASE_SCHEMA}` : '';
+    const web = WEB_ROOT ? `, web: ${WEB_ROOT}` : '';
+    console.log(
+      `media API on http://${HOST}:${PORT} (db: ${redactedUrl(DATABASE.connectionString)}${schema}${web})`,
+    );
   });
 } catch (error) {
   console.error(`media API could not start: ${error.message}`);
