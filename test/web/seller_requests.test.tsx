@@ -30,7 +30,10 @@ const visit = (id: string, listingId: string, name: string, status: ViewingReque
 });
 
 beforeEach(() => {
-  api.mine.mockResolvedValue([listing('a', 'Villa Alpha'), listing('b', 'Villa Beta')]);
+  api.mine.mockResolvedValue({
+    listings: [listing('a', 'Villa Alpha'), listing('b', 'Villa Beta')],
+    photoUsage: { used: 0, max: 20 },
+  });
   api.cities.mockResolvedValue([]);
   api.requests.mockResolvedValue([visit('r1', 'a', 'Ana'), visit('r2', 'a', 'Bo', 'Confirmed')]);
 });
