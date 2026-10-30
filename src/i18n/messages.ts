@@ -415,6 +415,7 @@ const en: Dict = {
   'photo.pending': 'Pending',
   'photo.approved': 'Approved',
   'photo.rejected': 'Rejected',
+  'photo.tooLarge': 'This photo is too large, even after compression. Choose a smaller photo.',
 
   'sell.eyebrow': 'Seller studio',
   'sell.title': 'Put a place on the market',
@@ -941,6 +942,7 @@ const es: Dict = {
   'photo.pending': 'Pendiente',
   'photo.approved': 'Aprobada',
   'photo.rejected': 'Rechazada',
+  'photo.tooLarge': 'La foto es demasiado grande, incluso comprimida. Elige una foto más pequeña.',
 
   'sell.eyebrow': 'Estudio del vendedor',
   'sell.title': 'Pon un lugar en el mercado',
@@ -1469,6 +1471,7 @@ const nl: Dict = {
   'photo.pending': 'In afwachting',
   'photo.approved': 'Goedgekeurd',
   'photo.rejected': 'Afgekeurd',
+  'photo.tooLarge': 'De foto is te groot, ook na compressie. Kies een kleinere foto.',
 
   'sell.eyebrow': 'Verkopersstudio',
   'sell.title': 'Zet een plek in de markt',
@@ -1993,6 +1996,7 @@ const da: Dict = {
   'photo.pending': 'Afventer',
   'photo.approved': 'Godkendt',
   'photo.rejected': 'Afvist',
+  'photo.tooLarge': 'Billedet er for stort, selv efter komprimering. Vælg et mindre billede.',
 
   'sell.eyebrow': 'Sælgerstudie',
   'sell.title': 'Sæt et sted til salg',

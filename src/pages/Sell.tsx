@@ -3,7 +3,7 @@ import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../state/AuthProvider';
 import { useI18n } from '../state/LanguageProvider';
 import { formatPrice } from '../lib/format';
-import { shrinkImage } from '../lib/image';
+import { isPhotoTooLarge, LISTING_PHOTO, shrinkImage } from '../lib/image';
 import { PinIcon } from '../components/icons';
 import {
   ApiError,
@@ -144,10 +144,16 @@ function ListingPhotos({
     setError('');
     setBusy(slot);
     try {
-      const blob = await shrinkImage(file, 1600);
+      const blob = await shrinkImage(file, LISTING_PHOTO);
       onUpdate(await listingApi.uploadPhoto(listing.id, slot, blob));
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : t('sell.errorPhotoUpload'));
+      setError(
+        isPhotoTooLarge(caught)
+          ? t('photo.tooLarge')
+          : caught instanceof ApiError
+            ? caught.message
+            : t('sell.errorPhotoUpload'),
+      );
     } finally {
       setBusy(null);
     }
@@ -288,7 +294,7 @@ function ListingForm({
         if (!draft) continue;
         setUploading(slot);
         try {
-          const blob = await shrinkImage(draft.file, 1600);
+          const blob = await shrinkImage(draft.file, LISTING_PHOTO);
           latest = await listingApi.uploadPhoto(latest.id, slot, blob);
         } catch {
           failed = true;

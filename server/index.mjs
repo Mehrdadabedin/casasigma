@@ -27,7 +27,10 @@ const PORT = Number(process.env.API_PORT ?? 8787);
 const HOST = process.env.API_HOST || '127.0.0.1';
 const WEB_ROOT = webRoot(ROOT);
 const { schema: DATABASE_SCHEMA, ...DATABASE } = databaseConfig();
-const MAX_BYTES = 8 * 1024 * 1024;
+// Photo upload ceilings, so photos cannot fill the (shared) database. The
+// browser compresses to fit them first; keep in step with src/lib/image.ts.
+const MAX_LISTING_PHOTO_BYTES = 1024 * 1024;
+const MAX_PROFILE_PHOTO_BYTES = 512 * 1024;
 const MAX_JSON_BYTES = 64 * 1024;
 const SLUG = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -77,16 +80,20 @@ function sendJson(response, status, body) {
   response.end(payload);
 }
 
-async function readBody(request, limit = MAX_BYTES) {
+function tooLarge(limit) {
+  const error = new Error(`payload too large (at most ${Math.floor(limit / 1024)} KB)`);
+  error.status = 413;
+  return error;
+}
+
+async function readBody(request, limit) {
+  // A declared length over the limit is refused before reading any of it.
+  if (Number(request.headers['content-length']) > limit) throw tooLarge(limit);
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > limit) {
-      const error = new Error('payload too large');
-      error.status = 413;
-      throw error;
-    }
+    if (size > limit) throw tooLarge(limit);
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
@@ -689,7 +696,7 @@ async function putMedia(slug, request, response) {
     return;
   }
 
-  const bytes = await readBody(request);
+  const bytes = await readBody(request, MAX_LISTING_PHOTO_BYTES);
   if (bytes.length === 0) {
     sendJson(response, 400, { error: 'empty body' });
     return;
@@ -1100,7 +1107,7 @@ async function uploadListingPhoto(listingId, request, response, url) {
     sendJson(response, 415, { error: 'unsupported media type', allowed: [...MIME_TYPES] });
     return;
   }
-  const bytes = await readBody(request);
+  const bytes = await readBody(request, MAX_LISTING_PHOTO_BYTES);
   if (bytes.length === 0) {
     sendJson(response, 400, { error: 'empty body' });
     return;
@@ -1461,7 +1468,7 @@ async function uploadProfilePhoto(request, response) {
     return;
   }
 
-  const bytes = await readBody(request);
+  const bytes = await readBody(request, MAX_PROFILE_PHOTO_BYTES);
   if (bytes.length === 0) {
     sendJson(response, 400, { error: 'empty body' });
     return;

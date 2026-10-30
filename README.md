@@ -115,6 +115,14 @@ asset saved as transparent PNG so it sits on the cream page without a visible bo
 **Data model** ([`db/schema.sql`](db/schema.sql)): `media(slug, mime, bytes bytea, updated_at)`, with
 checks on the slug format, MIME type and an 8 MB ceiling.
 
+**Photo size limits.** The API refuses a listing photo over **1 MB** and a profile portrait over
+**512 KB** (`413`), whether or not the upload declares its length. Before uploading, the browser
+([`src/lib/image.ts`](src/lib/image.ts)) re-encodes every photo as JPEG to fit: longest side at most
+1600 px (listings) or 900 px (portraits), then lower quality, then smaller, until it is under the
+limit. Re-encoding also drops EXIF data such as a phone's GPS position, and transparent PNG areas
+become white. A typical 3–8 MB phone photo ends up around 200–400 KB; one that still cannot fit is
+reported to the person instead of uploaded.
+
 **API** ([`server/index.mjs`](server/index.mjs), no framework):
 
 | Request | Result |
@@ -462,8 +470,8 @@ android/         Generated Capacitor Android project
   yet; only its photos can be changed after publishing.
 - Listing photos appear publicly as soon as they are uploaded — unlike profile portraits, there is
   no admin approval queue for them.
-- Profile photos are capped at 8 MB by `media` and resized to 900 px in the browser first. There
-  is no moderation history beyond the current status.
+- Profile photos are capped at 512 KB by the API and compressed in the browser first. There is no
+  moderation history beyond the current status.
 - Restaurant interest is a direct call or email after sign-in; there is no stored enquiry thread yet.
 - Sessions are cookie-based and therefore not yet verified inside the Capacitor WebView.
 - Slots are fictional; no availability service is contacted.
