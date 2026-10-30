@@ -152,14 +152,14 @@ comment on table listings is 'Listings added by sellers; inserting one also upse
 
 -- Photos for the listings sellers publish.
 --
--- Five fixed slots per listing, each pointing at a row in `media` (slug
+-- Twenty fixed slots per listing (a seller holds 20 photos in total), each pointing at a row in `media` (slug
 -- listing-*). Slot 1 is the cover; replacing a slot swaps the slug and the old
 -- file is removed, so no orphaned bytes stay behind.
 create table if not exists listing_photos (
   id uuid primary key default gen_random_uuid(),
   listing_id uuid not null references listings(id) on delete cascade,
   media_slug text not null references media(slug) on delete cascade,
-  position smallint not null check (position between 1 and 5),
+  position smallint not null check (position between 1 and 20),
   created_at timestamptz not null default now(),
   unique (listing_id, position)
 );
@@ -178,7 +178,20 @@ begin
 end
 $$;
 
-comment on table listing_photos is 'Up to five photos per listing; position 1 is the cover and each slug points into media.';
+-- A seller may put all 20 photos on one listing. This must stay after the
+-- five-slot block above, which sets the check back to 1-5 on a new database.
+do $$
+begin
+  if not exists (select 1 from schema_migrations where id = 'listing-photos-twenty-slots-v1') then
+    alter table listing_photos drop constraint if exists listing_photos_position_check;
+    alter table listing_photos
+      add constraint listing_photos_position_check check (position between 1 and 20);
+    insert into schema_migrations (id) values ('listing-photos-twenty-slots-v1');
+  end if;
+end
+$$;
+
+comment on table listing_photos is 'Up to twenty photos per listing; position 1 is the cover and each slug points into media.';
 
 -- Viewing requests sent from the Book page.
 --

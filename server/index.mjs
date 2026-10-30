@@ -35,7 +35,9 @@ const MAX_JSON_BYTES = 64 * 1024;
 const SLUG = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Photo slots per listing; slot 1 is the cover. Keep in step with db/schema.sql. */
-const MAX_PHOTO_SLOTS = 5;
+const MAX_PHOTO_SLOTS = 20;
+// The same number is the total a seller may hold across all of their listings.
+const MAX_PHOTOS_PER_SELLER = 20;
 const MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/avif']);
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const ROLES = new Set(['buyer', 'seller']);
@@ -998,7 +1000,7 @@ async function deleteListing(listingId, request, response) {
   } finally {
     client.release();
   }
-  sendJson(response, 200, { ok: true });
+  sendJson(response, 200, { ok: true, photoUsage: await photoUsage(row.seller_id) });
 }
 
 async function listListings(request, response, url) {
@@ -1024,7 +1026,10 @@ async function listListings(request, response, url) {
           order by l.created_at desc limit 200`,
       );
 
-  sendJson(response, 200, { listings: rows.map(session ? publicListing : guestListing) });
+  sendJson(response, 200, {
+    listings: rows.map(session ? publicListing : guestListing),
+    ...(mine ? { photoUsage: await photoUsage(session.user.id) } : {}),
+  });
 }
 
 /** One published listing, with its photos, for the public detail page. */
@@ -1070,6 +1075,17 @@ async function ownedListing(listingId, user, response) {
   return row;
 }
 
+/** How many photos a seller holds across every listing, and how many they may hold. */
+async function photoUsage(sellerId, db = pool) {
+  const { rows } = await db.query(
+    `select count(*)::int as used
+       from listing_photos lp join listings l on l.id = lp.listing_id
+      where l.seller_id = $1`,
+    [sellerId],
+  );
+  return { used: rows[0].used, max: MAX_PHOTOS_PER_SELLER };
+}
+
 async function reloadListing(listingId) {
   const { rows } = await pool.query(
     `select ${LISTING_SELECT}
@@ -1081,9 +1097,14 @@ async function reloadListing(listingId) {
 }
 
 /**
- * Store one of the five listing photos and point its slot at the new file. The
- * old slug in that slot is deleted afterwards, so a replacement leaves no
- * orphaned bytes in `media`.
+ * Store a listing photo in a slot (1 to MAX_PHOTO_SLOTS) and point the slot at
+ * the new file. The old slug in that slot is deleted afterwards, so a
+ * replacement leaves no orphaned bytes in `media`.
+ *
+ * A seller holds at most MAX_PHOTOS_PER_SELLER photos over all listings. The
+ * count belongs to the listing's seller, and is checked and inserted in one
+ * transaction under a lock on the seller's user row, so two uploads at once
+ * cannot both pass. Replacing a filled slot is never refused.
  */
 async function uploadListingPhoto(listingId, request, response, url) {
   const user = await currentUser(request, response);
@@ -1114,11 +1135,30 @@ async function uploadListingPhoto(listingId, request, response, url) {
   }
 
   const slug = `listing-${randomBytes(8).toString('hex')}`;
-  const previous = row.photos.find((photo) => photo.slot === slot)?.slug ?? null;
+  let previous = null;
+  let usage;
 
   const client = await pool.connect();
   try {
     await client.query('begin');
+    await client.query('select 1 from users where id = $1 for update', [row.seller_id]);
+    const filled = await client.query(
+      'select media_slug from listing_photos where listing_id = $1 and position = $2',
+      [row.id, slot],
+    );
+    previous = filled.rows[0]?.media_slug ?? null;
+    if (!previous) {
+      const { used } = await photoUsage(row.seller_id, client);
+      if (used >= MAX_PHOTOS_PER_SELLER) {
+        await client.query('rollback');
+        sendJson(response, 409, {
+          error: `You can have at most ${MAX_PHOTOS_PER_SELLER} photos. Remove one to add another.`,
+          field: 'photos',
+          photoUsage: { used, max: MAX_PHOTOS_PER_SELLER },
+        });
+        return;
+      }
+    }
     await client.query('insert into media (slug, mime, bytes) values ($1, $2, $3)', [
       slug,
       mime,
@@ -1131,6 +1171,7 @@ async function uploadListingPhoto(listingId, request, response, url) {
           set media_slug = excluded.media_slug, created_at = now()`,
       [row.id, slug, slot],
     );
+    usage = await photoUsage(row.seller_id, client);
     await client.query('commit');
   } catch (error) {
     await client.query('rollback').catch(() => undefined);
@@ -1143,7 +1184,7 @@ async function uploadListingPhoto(listingId, request, response, url) {
     await pool.query('delete from media where slug = $1', [previous]);
   }
 
-  sendJson(response, 200, { listing: await reloadListing(row.id) });
+  sendJson(response, 200, { listing: await reloadListing(row.id), photoUsage: usage });
 }
 
 async function removeListingPhoto(listingId, slot, request, response) {
@@ -1169,7 +1210,10 @@ async function removeListingPhoto(listingId, slot, request, response) {
     return;
   }
   await pool.query('delete from media where slug = $1', [rows[0].media_slug]);
-  sendJson(response, 200, { listing: await reloadListing(row.id) });
+  sendJson(response, 200, {
+    listing: await reloadListing(row.id),
+    photoUsage: await photoUsage(row.seller_id),
+  });
 }
 
 // `visit_date` is cast to text: pg turns a date into a JS Date at local

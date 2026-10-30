@@ -338,7 +338,7 @@ Suspension is the broader switch — a suspended account cannot sign in at all, 
 | `GET /api/listings` | live listings, newest first (`?mine=1` for the signed-in seller) |
 | `GET /api/listings/:id` | one published listing with its photos, for `/#/listings/:id` |
 | `POST /api/listings` | seller or admin: title, kind, city, price, description → upserts `cities`, inserts `listings` |
-| `POST /api/listings/:id/photos?slot=1…5` | raw image bytes → `media` (`listing-*` slug) and that photo slot; replacing a slot deletes the old file |
+| `POST /api/listings/:id/photos?slot=1…20` | raw image bytes → `media` (`listing-*` slug) and that photo slot; replacing a slot deletes the old file. A seller holds at most 20 photos over all listings (`409` past that); the reply carries `photoUsage: { used, max }` |
 | `DELETE /api/listings/:id/photos/:slot` | removes one photo and its bytes; the other slots keep their numbers |
 | `POST /api/viewings` | the `/book` contact form; guests allowed, signed-in requests get `user_id` |
 | `GET /api/viewings` | the signed-in account's requests, by visit date |
@@ -421,7 +421,7 @@ Notes:
   still saved on the device under `casasigma.store.v1` and listed below the account requests.
 - **Seller studio** — signing in as a seller opens `/#/sell` directly, with the Homes tab next to
   it for browsing and search. The form publishes a listing (title, type, town, price, description)
-  into `listings` and uploads up to five photos into the fixed slots 1–5; slot 1 is the cover.
+  into `listings` and uploads up to 20 photos (20 per seller in total), added one at a time into slots 1–20; slot 1 is the cover.
   Published listings keep editable photo slots under “Your listings”. The town is upserted into
   `cities`, so a new place becomes a filter option for every buyer; `/#/homes` reads that table and
   shows the new listings under “Just listed”, each linking to `/#/listings/:id` with the gallery and

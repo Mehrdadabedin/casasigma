@@ -8,8 +8,10 @@ import { PinIcon } from '../components/icons';
 import {
   ApiError,
   cityApi,
+  isPhotoLimit,
   listingApi,
   PHOTO_SLOTS,
+  type PhotoUsage,
   sellerViewingApi,
   type Listing,
   type ViewingRequest,
@@ -20,101 +22,120 @@ const coverSlug = (listing: Listing) =>
   [...listing.photos].sort((a, b) => a.slot - b.slot)[0]?.slug;
 
 const kinds = ['House', 'Apartment', 'Loft', 'Villa', 'Restaurant'] as const;
-const SLOTS = Array.from({ length: PHOTO_SLOTS }, (_, index) => index + 1);
 
-type Draft = { file: File; url: string };
+type Draft = { slot: number; file: File; url: string };
 
 /**
- * Five photo slots. Empty slots open a file picker; a filled slot can be
- * replaced by clicking it and removed with the × in the corner. The parent
- * decides what the bytes mean: a pending file before publishing, an upload
- * afterwards.
+ * The slot a new photo takes: after the highest one in use, so removing the
+ * cover never promotes the next new photo to cover. Past slot 20 it takes the
+ * lowest free slot. `room` is how many photos the seller may still add; at 0
+ * (or with no free slot) there is no next slot.
+ */
+export function nextPhotoSlot(taken: number[], room: number): number | null {
+  if (room <= 0) return null;
+  const last = Math.max(0, ...taken) + 1;
+  if (last <= PHOTO_SLOTS) return last;
+  for (let slot = 1; slot <= PHOTO_SLOTS; slot += 1) {
+    if (!taken.includes(slot)) return slot;
+  }
+  return null;
+}
+
+/**
+ * The photos so far, in slot order, and one "Add photo" box for the next one.
+ * At the limit (`nextSlot` is null) the box gives way to a short message. A
+ * filled photo can be replaced by clicking it and removed with the × in the
+ * corner. The parent decides what the bytes mean: a pending file before
+ * publishing, an upload afterwards.
  */
 export function PhotoSlotGrid({
   photos,
+  nextSlot,
   onPick,
   onClear,
   busy = null,
   error = '',
 }: {
-  photos: (string | null)[];
+  photos: { slot: number; src: string }[];
+  nextSlot: number | null;
   onPick: (slot: number, file: File) => void;
   onClear?: (slot: number) => void;
   busy?: number | null;
   error?: string;
 }) {
   const { t } = useI18n();
-  const inputs = useRef<Array<HTMLInputElement | null>>([]);
+  const inputs = useRef(new Map<number, HTMLInputElement | null>());
+
+  const fileInput = (slot: number) => (
+    <input
+      ref={(node) => {
+        inputs.current.set(slot, node);
+      }}
+      type="file"
+      accept="image/png,image/jpeg,image/webp"
+      className="visually-hidden"
+      onChange={(event) => {
+        const file = event.target.files?.[0];
+        // Clear the value so picking the same file again still fires.
+        event.target.value = '';
+        if (file) onPick(slot, file);
+      }}
+    />
+  );
 
   return (
     <div className="photoslots">
       <div className="photoslots__grid">
-        {photos.map((src, index) => {
-          const slot = index + 1;
-          return (
-            <div key={slot} className={`photoslot ${src ? 'is-filled' : ''}`}>
-              {src ? (
-                <button
-                  type="button"
-                  className="photoslot__swap"
-                  aria-label={t('sell.replacePhoto')}
-                  title={t('sell.replacePhoto')}
-                  disabled={busy !== null}
-                  onClick={() => inputs.current[index]?.click()}
-                >
-                  <img
-                    className="photoslot__img"
-                    src={src}
-                    alt={t('sell.photoSlot', { n: slot })}
-                  />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="photoslot__add"
-                  disabled={busy !== null}
-                  onClick={() => inputs.current[index]?.click()}
-                >
-                  <span className="photoslot__plus" aria-hidden="true">
-                    +
-                  </span>
-                  <span>{t('sell.addPhoto')}</span>
-                </button>
-              )}
+        {photos.map(({ slot, src }) => (
+          <div key={slot} className="photoslot is-filled">
+            <button
+              type="button"
+              className="photoslot__swap"
+              aria-label={t('sell.replacePhoto')}
+              title={t('sell.replacePhoto')}
+              disabled={busy !== null}
+              onClick={() => inputs.current.get(slot)?.click()}
+            >
+              <img className="photoslot__img" src={src} alt={t('sell.photoSlot', { n: slot })} />
+            </button>
 
-              {onClear && src && (
-                <button
-                  type="button"
-                  className="photoslot__remove"
-                  aria-label={t('sell.removePhoto')}
-                  title={t('sell.removePhoto')}
-                  disabled={busy !== null}
-                  onClick={() => onClear(slot)}
-                >
-                  ×
-                </button>
-              )}
+            {onClear && (
+              <button
+                type="button"
+                className="photoslot__remove"
+                aria-label={t('sell.removePhoto')}
+                title={t('sell.removePhoto')}
+                disabled={busy !== null}
+                onClick={() => onClear(slot)}
+              >
+                ×
+              </button>
+            )}
 
-              {busy === slot && <span className="photoslot__busy">{t('sell.photoBusy')}</span>}
+            {busy === slot && <span className="photoslot__busy">{t('sell.photoBusy')}</span>}
+            {fileInput(slot)}
+          </div>
+        ))}
 
-              <input
-                ref={(node) => {
-                  inputs.current[index] = node;
-                }}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                className="visually-hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  // Clear the value so picking the same file again still fires.
-                  event.target.value = '';
-                  if (file) onPick(slot, file);
-                }}
-              />
-            </div>
-          );
-        })}
+        {nextSlot !== null && (
+          <div className="photoslot" data-slot={nextSlot}>
+            <button
+              type="button"
+              className="photoslot__add"
+              disabled={busy !== null}
+              onClick={() => inputs.current.get(nextSlot)?.click()}
+            >
+              <span className="photoslot__plus" aria-hidden="true">
+                +
+              </span>
+              <span>{t('sell.addPhoto')}</span>
+            </button>
+            {busy === nextSlot && <span className="photoslot__busy">{t('sell.photoBusy')}</span>}
+            {fileInput(nextSlot)}
+          </div>
+        )}
       </div>
+      {nextSlot === null && <p className="sell__hint">{t('sell.photoLimit')}</p>}
       {error && (
         <p className="formerror" role="alert">
           {error}
@@ -124,17 +145,30 @@ export function PhotoSlotGrid({
   );
 }
 
-/** Photo slots for a listing that is already published. */
+const photoErrorText = (caught: unknown, t: (key: string) => string) =>
+  isPhotoTooLarge(caught)
+    ? t('photo.tooLarge')
+    : isPhotoLimit(caught)
+      ? t('sell.photoLimit')
+      : caught instanceof ApiError
+        ? caught.message
+        : t('sell.errorPhotoUpload');
+
+/** Photos of a listing that is already published; each change is saved at once. */
 function ListingPhotos({
   listing,
+  usage,
+  initialError = '',
   onUpdate,
 }: {
   listing: Listing;
-  onUpdate: (listing: Listing) => void;
+  usage: PhotoUsage;
+  initialError?: string;
+  onUpdate: (listing: Listing, usage: PhotoUsage) => void;
 }) {
   const { t } = useI18n();
   const [busy, setBusy] = useState<number | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError);
 
   async function onPick(slot: number, file: File) {
     if (!file.type.startsWith('image/')) {
@@ -145,15 +179,10 @@ function ListingPhotos({
     setBusy(slot);
     try {
       const blob = await shrinkImage(file, LISTING_PHOTO);
-      onUpdate(await listingApi.uploadPhoto(listing.id, slot, blob));
+      const result = await listingApi.uploadPhoto(listing.id, slot, blob);
+      onUpdate(result.listing, result.photoUsage);
     } catch (caught) {
-      setError(
-        isPhotoTooLarge(caught)
-          ? t('photo.tooLarge')
-          : caught instanceof ApiError
-            ? caught.message
-            : t('sell.errorPhotoUpload'),
-      );
+      setError(photoErrorText(caught, t));
     } finally {
       setBusy(null);
     }
@@ -163,7 +192,8 @@ function ListingPhotos({
     setError('');
     setBusy(slot);
     try {
-      onUpdate(await listingApi.removePhoto(listing.id, slot));
+      const result = await listingApi.removePhoto(listing.id, slot);
+      onUpdate(result.listing, result.photoUsage);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : t('sell.errorPhotoUpload'));
     } finally {
@@ -171,12 +201,17 @@ function ListingPhotos({
     }
   }
 
+  const photos = [...listing.photos]
+    .sort((a, b) => a.slot - b.slot)
+    .map((photo) => ({ slot: photo.slot, src: `api/media/${photo.slug}` }));
+
   return (
     <PhotoSlotGrid
-      photos={SLOTS.map((slot) => {
-        const slug = listing.photos.find((photo) => photo.slot === slot)?.slug;
-        return slug ? `api/media/${slug}` : null;
-      })}
+      photos={photos}
+      nextSlot={nextPhotoSlot(
+        photos.map((photo) => photo.slot),
+        usage.max - usage.used,
+      )}
       onPick={(slot, file) => void onPick(slot, file)}
       onClear={(slot) => void onClear(slot)}
       busy={busy}
@@ -189,14 +224,18 @@ function ListingPhotos({
 function ListingForm({
   listing,
   cities,
+  usage,
+  startError,
   onSaved,
   onPhotos,
   onClose,
 }: {
   listing: Listing | null;
   cities: string[];
-  onSaved: (listing: Listing, isNew: boolean) => void;
-  onPhotos: (listing: Listing) => void;
+  usage: PhotoUsage;
+  startError: string;
+  onSaved: (listing: Listing, isNew: boolean, usage: PhotoUsage | null, photoError: string) => void;
+  onPhotos: (listing: Listing, usage: PhotoUsage) => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -205,7 +244,8 @@ function ListingForm({
   const [city, setCity] = useState(listing?.city ?? '');
   const [price, setPrice] = useState(listing?.price !== undefined ? String(listing.price) : '');
   const [description, setDescription] = useState(listing?.description ?? '');
-  const [drafts, setDrafts] = useState<(Draft | null)[]>(Array(PHOTO_SLOTS).fill(null));
+  // Photos chosen before the listing exists; only a new listing has them.
+  const [drafts, setDrafts] = useState<Draft[]>([]);
   const [error, setError] = useState('');
   const [photoError, setPhotoError] = useState('');
   const [pending, setPending] = useState(false);
@@ -230,27 +270,25 @@ function ListingForm({
     const url = URL.createObjectURL(file);
     draftUrls.current.add(url);
     setDrafts((current) => {
-      const previous = current[slot - 1];
+      const previous = current.find((draft) => draft.slot === slot);
       if (previous) {
         URL.revokeObjectURL(previous.url);
         draftUrls.current.delete(previous.url);
       }
-      const next = [...current];
-      next[slot - 1] = { file, url };
-      return next;
+      return [...current.filter((draft) => draft.slot !== slot), { slot, file, url }].sort(
+        (a, b) => a.slot - b.slot,
+      );
     });
   }
 
   function clearDraft(slot: number) {
     setDrafts((current) => {
-      const previous = current[slot - 1];
+      const previous = current.find((draft) => draft.slot === slot);
       if (previous) {
         URL.revokeObjectURL(previous.url);
         draftUrls.current.delete(previous.url);
       }
-      const next = [...current];
-      next[slot - 1] = null;
-      return next;
+      return current.filter((draft) => draft.slot !== slot);
     });
   }
 
@@ -287,25 +325,22 @@ function ListingForm({
         : await listingApi.create(input);
 
       // Publish first, then attach the chosen photos to their slots. A failed
-      // photo leaves the listing live and reports which slot to retry.
-      let failed = false;
-      for (const slot of SLOTS) {
-        const draft = drafts[slot - 1];
-        if (!draft) continue;
-        setUploading(slot);
+      // photo leaves the listing live, in edit mode, with the reason shown.
+      let latestUsage: PhotoUsage | null = null;
+      let failure = '';
+      for (const draft of drafts) {
+        setUploading(draft.slot);
         try {
           const blob = await shrinkImage(draft.file, LISTING_PHOTO);
-          latest = await listingApi.uploadPhoto(latest.id, slot, blob);
-        } catch {
-          failed = true;
+          const result = await listingApi.uploadPhoto(latest.id, draft.slot, blob);
+          latest = result.listing;
+          latestUsage = result.photoUsage;
+        } catch (caught) {
+          failure = photoErrorText(caught, t);
         }
       }
-      onSaved(latest, !listing);
-      if (failed) {
-        // Stay on the listing in edit mode so the failed slot can be retried.
-        return;
-      }
-      onClose();
+      onSaved(latest, !listing, latestUsage, failure);
+      if (!failure) onClose();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : t('sell.errorGeneric'));
     } finally {
@@ -391,10 +426,20 @@ function ListingForm({
       <div className="sell__photos">
         <p className="sell__photos-title">{t('sell.photosTitle')}</p>
         <p className="sell__hint">{t('sell.photosSub')}</p>
-        {listing && <ListingPhotos listing={listing} onUpdate={onPhotos} />}
-        {(!listing || drafts.some(Boolean)) && (
+        {listing ? (
+          <ListingPhotos
+            listing={listing}
+            usage={usage}
+            initialError={startError}
+            onUpdate={onPhotos}
+          />
+        ) : (
           <PhotoSlotGrid
-            photos={drafts.map((draft) => draft?.url ?? null)}
+            photos={drafts.map((draft) => ({ slot: draft.slot, src: draft.url }))}
+            nextSlot={nextPhotoSlot(
+              drafts.map((draft) => draft.slot),
+              usage.max - usage.used - drafts.length,
+            )}
             onPick={pickDraft}
             onClear={clearDraft}
             busy={uploading}
@@ -465,7 +510,7 @@ export function ListingRow({
           <PinIcon width={13} height={13} /> {listing.city} · {listing.kind}
         </span>
         <span className="sell__count">
-          {t('sell.photoCount', { n: listing.photos.length, max: PHOTO_SLOTS })} ·{' '}
+          {tp('listing.photoCount', listing.photos.length)} ·{' '}
           {tp('sell.requestCount', requestCount)}
         </span>
         <div className="sell__item-actions">
@@ -575,6 +620,9 @@ export function Sell() {
   // null = closed, 'new' = add form, otherwise the id of the listing being edited.
   const [editing, setEditing] = useState<string | null>(null);
   const [notice, setNotice] = useState<Listing | null>(null);
+  const [usage, setUsage] = useState<PhotoUsage>({ used: 0, max: PHOTO_SLOTS });
+  // A photo that failed while publishing; shown again once the form reopens in edit mode.
+  const [carriedError, setCarriedError] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [requests, setRequests] = useState<ViewingRequest[]>([]);
   const [requestError, setRequestError] = useState('');
@@ -590,7 +638,10 @@ export function Sell() {
     void loadCities();
     listingApi
       .mine()
-      .then(setMine)
+      .then((data) => {
+        setMine(data.listings);
+        setUsage(data.photoUsage);
+      })
       .catch(() => setMine([]));
     sellerViewingApi
       .list()
@@ -610,9 +661,18 @@ export function Sell() {
     );
   }
 
-  function onSaved(next: Listing, isNew: boolean) {
+  function onPhotos(next: Listing, nextUsage: PhotoUsage) {
+    replaceListing(next);
+    setUsage(nextUsage);
+  }
+
+  function onSaved(next: Listing, isNew: boolean, nextUsage: PhotoUsage | null, photoError: string) {
     if (isNew) setMine((current) => (current ? [next, ...current] : [next]));
     else replaceListing(next);
+    if (nextUsage) setUsage(nextUsage);
+    setCarriedError(photoError);
+    // Stay on the saved listing in edit mode so the failed photos can be retried.
+    if (photoError) setEditing(next.id);
     setNotice(isNew ? next : null);
     void loadCities();
   }
@@ -630,7 +690,8 @@ export function Sell() {
   async function onDelete(listing: Listing) {
     setDeleteError('');
     try {
-      await listingApi.remove(listing.id);
+      const result = await listingApi.remove(listing.id);
+      setUsage(result.photoUsage);
       setMine((current) => (current ? current.filter((row) => row.id !== listing.id) : current));
       if (editing === listing.id) setEditing(null);
       setNotice((current) => (current?.id === listing.id ? null : current));
@@ -651,6 +712,7 @@ export function Sell() {
             type="button"
             onClick={() => {
               setNotice(null);
+              setCarriedError('');
               setEditing('new');
             }}
           >
@@ -679,8 +741,10 @@ export function Sell() {
             key={editing}
             listing={editedListing}
             cities={cities}
+            usage={usage}
+            startError={carriedError}
             onSaved={onSaved}
-            onPhotos={replaceListing}
+            onPhotos={onPhotos}
             onClose={() => setEditing(null)}
           />
         )}
@@ -710,6 +774,7 @@ export function Sell() {
                   }
                   onEdit={() => {
                     setNotice(null);
+                    setCarriedError('');
                     setEditing(listing.id);
                   }}
                   onDelete={() => void onDelete(listing)}

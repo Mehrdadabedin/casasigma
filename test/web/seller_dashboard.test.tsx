@@ -55,7 +55,7 @@ function show() {
 
 beforeEach(() => {
   auth.user = { id: 's1', canSell: true };
-  api.mine.mockResolvedValue([villa]);
+  api.mine.mockResolvedValue({ listings: [villa], photoUsage: { used: 2, max: 20 } });
   api.cities.mockResolvedValue([]);
 });
 
@@ -69,17 +69,19 @@ describe('seller dashboard', () => {
     const { container } = show();
     expect(await screen.findByText('Villa with a view')).toBeTruthy();
     expect(container.textContent).toContain('€450,000');
-    expect(container.textContent).toContain('2 of 5 photos');
+    expect(container.textContent).toContain('2 photos');
+    expect(container.textContent).not.toContain('of 20');
     expect(container.querySelector('.sell__cover img')?.getAttribute('src')).toBe('api/media/listing-two');
   });
 
-  it('opens the form card with five photo slots from Add listing', async () => {
+  it('opens the form card with one add-photo box from Add listing', async () => {
     const { container } = show();
     await screen.findByText('Villa with a view');
     expect(container.querySelector('form')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Add listing' }));
     expect(container.querySelector('form')).not.toBeNull();
-    expect(container.querySelectorAll('.photoslot')).toHaveLength(5);
+    expect(container.querySelectorAll('.photoslot')).toHaveLength(1);
+    expect(container.querySelectorAll('.photoslot__add')).toHaveLength(1);
   });
 
   it('the form validates before calling the API', async () => {
@@ -109,7 +111,7 @@ describe('seller dashboard', () => {
   });
 
   it('Delete asks first, then removes the row', async () => {
-    api.remove.mockResolvedValue({ ok: true });
+    api.remove.mockResolvedValue({ ok: true, photoUsage: { used: 0, max: 20 } });
     show();
     await screen.findByText('Villa with a view');
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
