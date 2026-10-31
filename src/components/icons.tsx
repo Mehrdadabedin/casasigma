@@ -1,6 +1,6 @@
 import type { SVGProps } from 'react';
 
-type IconProps = SVGProps<SVGSVGElement>;
+export type IconProps = SVGProps<SVGSVGElement>;
 
 const base = {
   fill: 'none',
@@ -11,6 +11,14 @@ const base = {
   viewBox: '0 0 24 24',
   'aria-hidden': true,
 };
+
+export function MenuIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M4 6.5h16M4 12h16M4 17.5h16" />
+    </svg>
+  );
+}
 
 export function CompassIcon(props: IconProps) {
   return (
