@@ -1,9 +1,10 @@
 import { useEffect, type ReactNode } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { BrandLogo } from './BrandLogo';
 import { Footer } from './Footer';
 import { HomeSlides } from './HomeSlides';
 import { LanguageSwitcher } from './LanguageSwitcher';
+import { NavMenu, type NavItem } from './NavMenu';
 import {
   CalendarIcon,
   CompassIcon,
@@ -25,6 +26,7 @@ const tabs = [
 
 const sellTab = { to: '/sell', key: 'nav.sell', Icon: TagIcon, end: false };
 const adminTab = { to: '/admin', key: 'nav.admin', Icon: ShieldIcon, end: false };
+const profileTab = { to: '/profile', key: 'profile.link', Icon: UserIcon, end: false };
 
 const roleLabel: Record<string, string> = {
   buyer: 'account.buying',
@@ -51,12 +53,13 @@ export function Layout({ children }: { children: ReactNode }) {
   // page. Sellers get the studio tab, which is where a listing (and its town)
   // is added. The /admin route and /api/admin/* still answer 401/403
   // regardless of the UI.
-  const links =
+  const sections =
     user?.role === 'admin'
       ? [...tabs.slice(0, 3), adminTab, tabs[3]]
       : user?.canSell
         ? [...tabs.slice(0, 3), sellTab, tabs[3]]
         : tabs;
+  const links: NavItem[] = user ? [...sections, profileTab] : sections;
 
   return (
     <div className={`app ${isHome ? 'app--home' : ''}`}>
@@ -67,19 +70,6 @@ export function Layout({ children }: { children: ReactNode }) {
           <Link to="/" className="brand" aria-label="CasaSigma home">
             <BrandLogo />
           </Link>
-          <nav className="topbar__nav" aria-label={t('nav.primary')}>
-            {links.slice(1).map(({ to, key, Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) => `topbar__link ${isActive ? 'is-active' : ''}`}
-              >
-                <Icon width={16} height={16} />
-                {t(key)}
-              </NavLink>
-            ))}
-          </nav>
-
           <LanguageSwitcher />
 
           <div className="topbar__account">
@@ -116,26 +106,14 @@ export function Layout({ children }: { children: ReactNode }) {
               </Link>
             )}
           </div>
+
+          <NavMenu links={links} />
         </div>
       </header>
 
       <main className="main">{children}</main>
 
       <Footer />
-
-      <nav className="tabbar" aria-label={t('nav.sections')}>
-        {links.map(({ to, key, Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) => `tabbar__tab ${isActive ? 'is-active' : ''}`}
-          >
-            <Icon width={22} height={22} />
-            <span>{t(key)}</span>
-          </NavLink>
-        ))}
-      </nav>
     </div>
   );
 }

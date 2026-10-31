@@ -116,28 +116,59 @@ button {
   width: auto;
 }
 
-.topbar__nav {
-  display: none;
-  gap: 4px;
-  margin-left: auto;
+/* the hamburger menu, on every screen size */
+.navmenu {
+  position: relative;
+  flex-shrink: 0;
 }
 
-.topbar__link {
-  display: inline-flex;
+.navmenu__button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.navmenu__button:hover {
+  background: rgb(34 29 24 / 8%);
+}
+
+.navmenu__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  gap: 2px;
+  min-width: 220px;
+  padding: 8px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+}
+
+.navmenu__link {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  font-size: 0.85rem;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  font-size: 0.92rem;
   font-weight: 500;
   color: var(--ink-soft);
 }
 
-.topbar__link:hover {
+.navmenu__link:hover {
   background: rgb(34 29 24 / 5%);
 }
 
-.topbar__link.is-active {
+.navmenu__link.is-active {
   background: var(--ink);
   color: var(--paper);
 }
@@ -173,48 +204,6 @@ button {
     opacity: 0;
     transform: translateY(8px);
   }
-}
-
-.tabbar {
-  position: fixed;
-  z-index: 40;
-  bottom: calc(10px + var(--safe-bottom));
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(480px, calc(100% - 24px));
-  /* Flex rather than a fixed column count: admins get a fifth tab. */
-  display: flex;
-  gap: 2px;
-  padding: 8px;
-  background: rgb(255 253 248 / 94%);
-  border: 1px solid var(--line);
-  border-radius: 22px;
-  box-shadow: var(--shadow-md);
-  backdrop-filter: blur(16px);
-}
-
-.tabbar__tab {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 7px 4px 5px;
-  border-radius: 14px;
-  font-size: 0.68rem;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  color: var(--muted);
-}
-
-.tabbar__tab.is-active {
-  color: var(--accent-ink);
-  background: var(--accent-soft);
-}
-
-.tabbar__tab.is-active svg {
-  stroke-width: 1.9;
 }
 
 /* ---------- typography bits ---------- */
@@ -1858,29 +1847,15 @@ button {
   }
 }
 
-/* Below this width the tab bar is fixed over the bottom of the viewport, so
-   pages reserve room for it and the last control stays tappable. */
 @media (max-width: 899px) {
   .main {
-    padding-bottom: 84px;
+    padding-bottom: 40px;
   }
 }
 
 @media (min-width: 900px) {
-  .topbar__nav {
-    display: flex;
-  }
-
-  .brand {
-    margin-right: 0;
-  }
-
   .brand__logo {
     height: 40px;
-  }
-
-  .tabbar {
-    display: none;
   }
 
   .main {
@@ -1991,7 +1966,7 @@ button {
   margin-top: auto;
   border-top: 1px solid var(--line);
   background: rgb(239 230 216 / 55%);
-  padding: 32px 0 calc(104px + var(--safe-bottom));
+  padding: 32px 0 calc(30px + var(--safe-bottom));
 }
 
 .footer__inner {
@@ -2076,12 +2051,6 @@ button {
 
   .footer__bottom {
     padding: 16px 26px 0;
-  }
-}
-
-@media (min-width: 900px) {
-  .footer {
-    padding-bottom: 30px;
   }
 }
 
@@ -2181,6 +2150,17 @@ a.topbar__name:hover {
   }
 }
 
+/* narrow phones: the menu has Your profile, so the name gives way */
+@media (max-width: 420px) {
+  .topbar__inner {
+    gap: 8px;
+  }
+
+  .topbar__name {
+    display: none;
+  }
+}
+
 @media (max-width: 360px) {
   .topbar__name {
     display: none;
@@ -2188,6 +2168,16 @@ a.topbar__name:hover {
 
   .topbar__signin svg {
     display: none;
+  }
+
+  .topbar .brand__logo {
+    height: 26px;
+  }
+
+  .topbar__inner {
+    gap: 4px;
+    padding-right: 12px;
+    padding-left: 12px;
   }
 }
 
@@ -3607,8 +3597,6 @@ a.topbar__name:hover {
 }
 
 .app--home .footer__tagline,
-.app--home .footer__heading,
-.app--home .footer__col > a,
 .app--home .footer__copy,
 .app--home .footer__fine {
   color: #fff;
@@ -3642,18 +3630,18 @@ a.topbar__name:hover {
 .app--home .footer {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 10px 32px;
   width: 100%;
   max-width: 1180px;
   margin: 0 auto;
-  padding: 0 18px calc(84px + var(--safe-bottom));
+  padding: 0 18px calc(18px + var(--safe-bottom));
 }
 
 .app--home .footer__inner {
-  flex: 1 1 60%;
-  gap: 8px;
+  display: block;
+  flex: 1 1 auto;
   max-width: none;
   margin: 0;
   padding: 0;
@@ -3667,15 +3655,21 @@ a.topbar__name:hover {
   border-top: 0;
 }
 
-/* phones: the tab bar is there too, so the links share one row */
+/* the logo and the tagline on one line, level with the copyright */
 .app--home .footer__col {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 14px;
+  display: none;
 }
 
-.app--home .footer__heading {
-  display: none;
+.app--home .footer__brand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  max-width: none;
+}
+
+.app--home .footer__bottom {
+  align-items: center;
 }
 
 @media (min-width: 640px) {
@@ -3683,31 +3677,19 @@ a.topbar__name:hover {
     padding-right: 26px;
     padding-left: 26px;
   }
-
-  .app--home .footer__col {
-    display: grid;
-    gap: 5px;
-  }
-
-  .app--home .footer__heading {
-    display: block;
-  }
 }
 
-@media (min-width: 900px) {
+@media (min-width: 1000px) {
   .app--home .footer {
-    padding-bottom: 20px;
+    flex-wrap: nowrap;
   }
-}
 
-/* a phone held sideways: no tagline, and the links share one row */
-@media (max-height: 480px) {
+  .app--home .footer__brand {
+    flex-wrap: nowrap;
+  }
+
   .app--home .footer__tagline,
-  .app--home .footer__heading {
-    display: none;
-  }
-
-  .app--home .footer__col {
-    display: flex;
+  .app--home .footer__bottom {
+    white-space: nowrap;
   }
 }
