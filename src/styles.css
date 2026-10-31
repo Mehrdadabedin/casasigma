@@ -3615,6 +3615,99 @@ a.topbar__name:hover {
   text-shadow: 0 1px 8px rgb(20 16 12 / 70%);
 }
 
+/* one screen, no scrolling: the copyright sits on the right, in the footer's row */
+.app--home {
+  height: 100dvh;
+  min-height: 0;
+}
+
+.app--home .main {
+  min-height: 0;
+  padding-bottom: 0;
+}
+
+.app--home .page--home {
+  padding-top: 0;
+  padding-bottom: 12px;
+}
+
+.app--home .hero {
+  padding: 0;
+}
+
+.app--home .hero h1 {
+  font-size: clamp(2.1rem, min(11vw, 9dvh), 5.2rem);
+}
+
+.app--home .footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 32px;
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 18px calc(84px + var(--safe-bottom));
+}
+
+.app--home .footer__inner {
+  flex: 1 1 60%;
+  gap: 8px;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
 .app--home .footer__bottom {
-  border-top-color: rgb(255 255 255 / 35%);
+  gap: 4px 20px;
+  justify-content: flex-end;
+  margin: 0 0 0 auto;
+  padding: 0;
+  border-top: 0;
+}
+
+/* phones: the tab bar is there too, so the links share one row */
+.app--home .footer__col {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+}
+
+.app--home .footer__heading {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .app--home .footer {
+    padding-right: 26px;
+    padding-left: 26px;
+  }
+
+  .app--home .footer__col {
+    display: grid;
+    gap: 5px;
+  }
+
+  .app--home .footer__heading {
+    display: block;
+  }
+}
+
+@media (min-width: 900px) {
+  .app--home .footer {
+    padding-bottom: 20px;
+  }
+}
+
+/* a phone held sideways: no tagline, and the links share one row */
+@media (max-height: 480px) {
+  .app--home .footer__tagline,
+  .app--home .footer__heading {
+    display: none;
+  }
+
+  .app--home .footer__col {
+    display: flex;
+  }
 }
