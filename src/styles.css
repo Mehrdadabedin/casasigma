@@ -3533,3 +3533,88 @@ a.topbar__name:hover {
     aspect-ratio: 21 / 9;
   }
 }
+
+/* ---- the landing page: full-page photos, header and footer see-through ---- */
+.home-slides {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--ink);
+}
+
+/* a soft fade behind the header and the footer, so their text stays readable */
+.home-slides::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom, rgb(255 253 248 / 62%), transparent 130px),
+    linear-gradient(to top, rgb(20 16 12 / 78%), transparent 52%),
+    linear-gradient(rgb(20 16 12 / 24%), rgb(20 16 12 / 24%));
+}
+
+.home-slide {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 62%;
+  transform: translateX(-100%);
+}
+
+.home-slide.is-on {
+  transform: translateX(0);
+  transition: transform 0.9s ease-in-out;
+}
+
+.home-slide.is-out {
+  transform: translateX(100%);
+  transition: transform 0.9s ease-in-out;
+}
+
+.app--home .topbar {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.app--home .main,
+.app--home .footer {
+  position: relative;
+}
+
+.app--home .main {
+  display: flex;
+  align-items: center;
+}
+
+.app--home .page--home {
+  width: 100%;
+}
+
+.app--home .hero h1 {
+  color: #fff;
+  text-shadow: 0 1px 4px rgb(20 16 12 / 65%), 0 3px 28px rgb(20 16 12 / 75%);
+}
+
+.app--home .footer {
+  background: transparent;
+  border-top-color: transparent;
+}
+
+.app--home .footer__logo .brand__logo {
+  filter: brightness(0) invert(1);
+}
+
+.app--home .footer__tagline,
+.app--home .footer__heading,
+.app--home .footer__col > a,
+.app--home .footer__copy,
+.app--home .footer__fine {
+  color: #fff;
+  text-shadow: 0 1px 8px rgb(20 16 12 / 70%);
+}
+
+.app--home .footer__bottom {
+  border-top-color: rgb(255 255 255 / 35%);
+}

@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { BrandLogo } from './BrandLogo';
 import { Footer } from './Footer';
+import { HomeSlides } from './HomeSlides';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import {
   CalendarIcon,
@@ -58,8 +59,9 @@ export function Layout({ children }: { children: ReactNode }) {
         : tabs;
 
   return (
-    <div className="app">
+    <div className={`app ${isHome ? 'app--home' : ''}`}>
       <ScrollToTop />
+      {isHome && <HomeSlides />}
       <header className={`topbar ${isHome ? 'topbar--home' : ''}`}>
         <div className="topbar__inner">
           <Link to="/" className="brand" aria-label="CasaSigma home">
