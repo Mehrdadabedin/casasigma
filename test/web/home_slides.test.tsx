@@ -29,7 +29,7 @@ describe('the landing photos', () => {
 
   it('goes through all five and back to the first', () => {
     render(<HomeSlides />);
-    for (const [on, out] of [['casasigmasol', 'casa1'], ['casa2', 'casasigmasol'], ['casa3', 'casa2'], ['rest1', 'casa3'], ['casa1', 'rest1']]) {
+    for (const [on, out] of [['casasigmasol2', 'casa1'], ['casa2', 'casasigmasol2'], ['casa3', 'casa2'], ['rest1', 'casa3'], ['casa1', 'rest1']]) {
       next();
       expect(slide(on).classList.contains('is-on')).toBe(true);
       expect(slide(out).classList.contains('is-out')).toBe(true);

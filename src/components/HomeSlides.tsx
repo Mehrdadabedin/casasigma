@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 const SLIDES = [
   // very wide, so a phone shows it far bigger than the screen's width and needs the large file
   { name: 'casa1', width: 1920, sizes: 'max(100vw, 218vh)' },
-  { name: 'casasigmasol', width: 1495, sizes: '100vw' },
+  { name: 'casasigmasol2', width: 1484, sizes: 'max(100vw, 137vh)' },
   { name: 'casa2', width: 1920, sizes: '100vw' },
   { name: 'casa3', width: 1920, sizes: '100vw' },
   { name: 'rest1', width: 1920, sizes: '100vw' },
