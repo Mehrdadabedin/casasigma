@@ -115,6 +115,14 @@ asset saved as transparent PNG so it sits on the cream page without a visible bo
 **Data model** ([`db/schema.sql`](db/schema.sql)): `media(slug, mime, bytes bytea, updated_at)`, with
 checks on the slug format, MIME type and an 8 MB ceiling.
 
+**Photo size limits.** The API refuses a listing photo over **1 MB** and a profile portrait over
+**512 KB** (`413`), whether or not the upload declares its length. Before uploading, the browser
+([`src/lib/image.ts`](src/lib/image.ts)) re-encodes every photo as JPEG to fit: longest side at most
+1600 px (listings) or 900 px (portraits), then lower quality, then smaller, until it is under the
+limit. Re-encoding also drops EXIF data such as a phone's GPS position, and transparent PNG areas
+become white. A typical 3–8 MB phone photo ends up around 200–400 KB; one that still cannot fit is
+reported to the person instead of uploaded.
+
 **API** ([`server/index.mjs`](server/index.mjs), no framework):
 
 | Request | Result |
@@ -135,6 +143,100 @@ hosted Postgres when you deploy; the app code does not change.
 **Trade-off, stated plainly:** images in `bytea` are ideal for a dozen brand marks and thumbnails,
 and awkward for hundreds of megabytes of listing photography — that work goes to object storage
 with only the URL kept in Postgres.
+
+### Sharing a hosted Postgres (Render)
+
+CasaSigma can live inside another app's database — for example the ICMBOT Postgres on Render — so
+a test deployment needs no second paid database. Its tables go in a `casasigma` schema, and it
+connects with a login that has no rights on the other app's tables.
+
+1. As the database owner, from a terminal, run the one-time setup with the **External Database
+   URL** from the Render dashboard. It creates the `casasigma` schema and the `casasigma_app` login,
+   then asks for that login's password (not echoed, never written to a file). It is safe to run
+   again.
+
+   ```bash
+   psql "<External Database URL>" -f db/shared-database-setup.sql
+   ```
+
+2. On the CasaSigma service, in the **same region** as the database, set:
+
+   | Variable | Value |
+   | --- | --- |
+   | `DATABASE_URL` | the **Internal Database URL**, with `casasigma_app` and its password in place of the owner's user and password |
+   | `DATABASE_SCHEMA` | `casasigma` |
+
+On boot the API checks that the schema exists and that the login can use it, and refuses to start
+otherwise, so a wrong URL never creates tables in the other app's `public` schema. The seed scripts
+make the same check.
+
+Things that come with sharing:
+
+- **Resources are shared.** Both apps use the plan's RAM and connection limit. `casasigma_app` is
+  capped at 10 connections, and the API pool uses at most 4.
+- **Backups are shared.** Restoring the database to an earlier point rolls back both apps.
+- **Unverified on Render:** the setup needs an owner that can create roles (`CREATEROLE`). It was
+  rehearsed on a local Postgres 18 with a non-superuser owner, not on Render itself.
+- **Moving out later** is one `pg_dump --schema=casasigma` into CasaSigma's own database; then
+  unset `DATABASE_SCHEMA`.
+
+### Test deployment on Render (`casasigma-test.onrender.com`)
+
+One Render web service runs `server/index.mjs`, which serves both `/api` and the built web app from
+`dist/` (`server/web.mjs`). Page and API share one origin, which the API needs: it rejects
+cross-origin writes and its session cookie is `SameSite=Lax`. Routes are hash-based (`/#/…`), so no
+rewrite rule is needed. With `NODE_ENV=production` the API serves `dist/`; in development Vite does.
+
+1. **Database:** run the shared-database setup above against the ICMBOT database, and note its
+   region.
+2. **New → Web Service**, connect the `casasigma` repository, then:
+
+   | Setting | Value |
+   | --- | --- |
+   | Name | `casasigma-test` (the URL is `https://<name>.onrender.com`; if the name is taken Render adds a suffix) |
+   | Branch | `casasigma-postgres` |
+   | Region | **the same region as the ICMBOT database** |
+   | Runtime | Node |
+   | Build command | `npm ci --include=dev && npm run build` |
+   | Start command | `npm run api` |
+   | Instance type | Free is enough for a test (it sleeps when idle) |
+   | Health check path | `/api/health` (under Advanced) |
+
+   `--include=dev` matters: with `NODE_ENV=production` set, a plain `npm ci` skips TypeScript and
+   Vite and the build fails.
+
+3. **Environment variables:**
+
+   | Variable | Value |
+   | --- | --- |
+   | `NODE_VERSION` | `22` |
+   | `NODE_ENV` | `production` |
+   | `API_HOST` | `0.0.0.0` |
+   | `API_PORT` | `10000` (Render's default `PORT`) |
+   | `COOKIE_SECURE` | `1` |
+   | `APP_ORIGIN` | `https://casasigma-test.onrender.com` (the service's real URL, if Render changed the name) |
+   | `DATABASE_URL` | the ICMBOT database's **Internal Database URL** with `casasigma_app` and its password |
+   | `DATABASE_SCHEMA` | `casasigma` |
+
+   Without `RESEND_API_KEY` and `MAIL_FROM`, production sends no email; that is fine for a test.
+
+4. **Deploy.** The log should end with `media API on http://0.0.0.0:10000 (…, schema: casasigma,
+   web: …/dist)`, and `https://casasigma-test.onrender.com/api/health` should answer `ok: true`.
+
+5. **Demo accounts and brand images**, once, from your own machine. A free instance has no Render
+   shell, so the seed scripts run locally against the **External Database URL** (with
+   `casasigma_app`, plus `?sslmode=require`). `read -rs` keeps the passwords out of the shell
+   history:
+
+   ```bash
+   read -rs DEMO_PASSWORD && export DEMO_PASSWORD
+   read -rs ADMIN_STARTER_PASSWORD && export ADMIN_STARTER_PASSWORD
+   read -rs DATABASE_URL && export DATABASE_URL
+   DATABASE_SCHEMA=casasigma NODE_ENV=production npm run db:seed
+   DATABASE_SCHEMA=casasigma NODE_ENV=production npm run db:seed:users
+   ```
+
+   The admin then signs in as `admin2` with the starter password and chooses its own credentials.
 
 ## Accounts and sessions
 
@@ -236,7 +338,7 @@ Suspension is the broader switch — a suspended account cannot sign in at all, 
 | `GET /api/listings` | live listings, newest first (`?mine=1` for the signed-in seller) |
 | `GET /api/listings/:id` | one published listing with its photos, for `/#/listings/:id` |
 | `POST /api/listings` | seller or admin: title, kind, city, price, description → upserts `cities`, inserts `listings` |
-| `POST /api/listings/:id/photos?slot=1…5` | raw image bytes → `media` (`listing-*` slug) and that photo slot; replacing a slot deletes the old file |
+| `POST /api/listings/:id/photos?slot=1…20` | raw image bytes → `media` (`listing-*` slug) and that photo slot; replacing a slot deletes the old file. A seller holds at most 20 photos over all listings (`409` past that); the reply carries `photoUsage: { used, max }` |
 | `DELETE /api/listings/:id/photos/:slot` | removes one photo and its bytes; the other slots keep their numbers |
 | `POST /api/viewings` | the `/book` contact form; guests allowed, signed-in requests get `user_id` |
 | `GET /api/viewings` | the signed-in account's requests, by visit date |
@@ -319,7 +421,7 @@ Notes:
   still saved on the device under `casasigma.store.v1` and listed below the account requests.
 - **Seller studio** — signing in as a seller opens `/#/sell` directly, with the Homes tab next to
   it for browsing and search. The form publishes a listing (title, type, town, price, description)
-  into `listings` and uploads up to five photos into the fixed slots 1–5; slot 1 is the cover.
+  into `listings` and uploads up to 20 photos (20 per seller in total), added one at a time into slots 1–20; slot 1 is the cover.
   Published listings keep editable photo slots under “Your listings”. The town is upserted into
   `cities`, so a new place becomes a filter option for every buyer; `/#/homes` reads that table and
   shows the new listings under “Just listed”, each linking to `/#/listings/:id` with the gallery and
@@ -368,8 +470,8 @@ android/         Generated Capacitor Android project
   yet; only its photos can be changed after publishing.
 - Listing photos appear publicly as soon as they are uploaded — unlike profile portraits, there is
   no admin approval queue for them.
-- Profile photos are capped at 8 MB by `media` and resized to 900 px in the browser first. There
-  is no moderation history beyond the current status.
+- Profile photos are capped at 512 KB by the API and compressed in the browser first. There is no
+  moderation history beyond the current status.
 - Restaurant interest is a direct call or email after sign-in; there is no stored enquiry thread yet.
 - Sessions are cookie-based and therefore not yet verified inside the Capacitor WebView.
 - Slots are fictional; no availability service is contacted.

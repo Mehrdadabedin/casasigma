@@ -4,7 +4,7 @@ import { useAuth } from '../state/AuthProvider';
 import { useI18n } from '../state/LanguageProvider';
 import { Avatar } from '../components/Avatar';
 import { ApiError, profileApi, type Profile as ProfileRow } from '../lib/api';
-import { shrinkImage } from '../lib/image';
+import { isPhotoTooLarge, PROFILE_PHOTO, shrinkImage } from '../lib/image';
 
 export function Profile() {
   const { user, ready } = useAuth();
@@ -96,12 +96,16 @@ export function Profile() {
     }
     setUploading(true);
     try {
-      const blob = await shrinkImage(file, 900);
+      const blob = await shrinkImage(file, PROFILE_PHOTO);
       const next = await profileApi.uploadPhoto(blob);
       setProfile(next);
     } catch (caught) {
       setPhotoError(
-        caught instanceof ApiError ? caught.message : t('profile.errorPhotoUpload'),
+        isPhotoTooLarge(caught)
+          ? t('photo.tooLarge')
+          : caught instanceof ApiError
+            ? caught.message
+            : t('profile.errorPhotoUpload'),
       );
     } finally {
       setUploading(false);

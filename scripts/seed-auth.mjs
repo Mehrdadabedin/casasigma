@@ -14,12 +14,12 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes, scrypt as scryptCallback } from 'node:crypto';
 import { promisify } from 'node:util';
 import pg from 'pg';
+import { assertSchema, databaseConfig } from '../server/db.mjs';
 
 const { Pool } = pg;
 const scrypt = promisify(scryptCallback);
 
-const DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgres://casasigma@127.0.0.1:5434/casasigma';
+const { schema: DATABASE_SCHEMA, ...DATABASE } = databaseConfig();
 const randomPassword = () => randomBytes(12).toString('base64url');
 const password =
   process.env.DEMO_PASSWORD || (process.env.NODE_ENV === 'production' ? null : randomPassword());
@@ -37,7 +37,7 @@ if (!password) {
   process.exit(1);
 }
 
-const pool = new Pool({ connectionString: DATABASE_URL, max: 1 });
+const pool = new Pool({ ...DATABASE, max: 1 });
 
 async function hashPassword(value) {
   const salt = randomBytes(16);
@@ -59,6 +59,7 @@ function printStarter() {
 }
 
 try {
+  await assertSchema(pool, DATABASE_SCHEMA);
   const schema = await readFile(new URL('../db/schema.sql', import.meta.url), 'utf8');
   await pool.query(schema);
 

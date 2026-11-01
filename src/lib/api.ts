@@ -1,7 +1,13 @@
 export type Role = 'buyer' | 'seller' | 'admin';
 
 /** Photo slots per listing; slot 1 is the cover. */
-export const PHOTO_SLOTS = 5;
+export const PHOTO_SLOTS = 20;
+
+/** Photos a seller holds over all their listings, and the most they may hold. */
+export interface PhotoUsage {
+  used: number;
+  max: number;
+}
 
 export interface SessionUser {
   id: string;
@@ -104,7 +110,7 @@ export interface City {
 }
 
 export interface ListingPhotoRef {
-  /** Fixed slot 1–5; removing one leaves the others in their slots. */
+  /** Slot 1–20; removing one leaves the others in their slots. */
   slot: number;
   /** Media slug served at `api/media/:slug`. */
   slug: string;
@@ -205,10 +211,19 @@ export const cityApi = {
   list: () => request<{ cities: City[] }>('/api/cities').then((data) => data.cities),
 };
 
+export interface PhotoResult {
+  listing: Listing;
+  photoUsage: PhotoUsage;
+}
+
+/** The server refuses a photo past the seller's total with 409 on field `photos`. */
+export const isPhotoLimit = (error: unknown) =>
+  error instanceof ApiError && error.status === 409 && error.field === 'photos';
+
 export const listingApi = {
   list: () => request<{ listings: Listing[] }>('/api/listings').then((data) => data.listings),
   mine: () =>
-    request<{ listings: Listing[] }>('/api/listings?mine=1').then((data) => data.listings),
+    request<{ listings: Listing[]; photoUsage: PhotoUsage }>('/api/listings?mine=1'),
   create: (input: ListingInput) =>
     request<{ listing: Listing }>('/api/listings', {
       method: 'POST',
@@ -224,9 +239,11 @@ export const listingApi = {
       body: JSON.stringify(input),
     }).then((data) => data.listing),
   remove: (id: string) =>
-    request<{ ok: true }>(`/api/listings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  /** Store a photo in slot 1–5; replacing a slot deletes the previous file. */
-  uploadPhoto: async (id: string, slot: number, blob: Blob): Promise<Listing> => {
+    request<{ ok: true; photoUsage: PhotoUsage }>(`/api/listings/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+  /** Store a photo in slot 1–20; replacing a slot deletes the previous file. */
+  uploadPhoto: async (id: string, slot: number, blob: Blob): Promise<PhotoResult> => {
     const response = await fetch(
       `/api/listings/${encodeURIComponent(id)}/photos?slot=${slot}`,
       {
@@ -237,18 +254,17 @@ export const listingApi = {
       },
     );
     const payload = (await response.json().catch(() => null)) as
-      | { listing?: Listing; error?: string; field?: string }
+      | { listing?: Listing; photoUsage?: PhotoUsage; error?: string; field?: string }
       | null;
     if (!response.ok || !payload?.listing) {
       throw new ApiError(payload?.error ?? 'Upload failed.', response.status, payload?.field);
     }
-    return payload.listing;
+    return { listing: payload.listing, photoUsage: payload.photoUsage as PhotoUsage };
   },
   removePhoto: (id: string, slot: number) =>
-    request<{ listing: Listing }>(
-      `/api/listings/${encodeURIComponent(id)}/photos/${slot}`,
-      { method: 'DELETE' },
-    ).then((data) => data.listing),
+    request<PhotoResult>(`/api/listings/${encodeURIComponent(id)}/photos/${slot}`, {
+      method: 'DELETE',
+    }),
 };
 
 export const viewingApi = {

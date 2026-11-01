@@ -1,4 +1,4 @@
-// MKT3.1: a listing has five photo slots (1-5, slot 1 is the cover). Slot 6 is
+// MKT3.1/3.3: a listing has twenty photo slots (1-20, slot 1 is the cover). Slot 21 is
 // refused, and only the owning seller can write to a listing's slots.
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,6 +24,8 @@ const upload = (call, id, slot) =>
     headers: { 'content-type': 'image/jpeg' },
   });
 
+const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
 let owner;
 let other;
 let buyer;
@@ -36,7 +38,7 @@ before(async () => {
   buyer = await signedIn('buyer');
   const created = await owner('/api/listings', {
     method: 'POST',
-    body: { title: 'Five photo villa', kind: 'Villa', city: 'Mijas', price: 450000, description: 'Test' },
+    body: { title: 'Twenty photo villa', kind: 'Villa', city: 'Mijas', price: 450000, description: 'Test' },
   });
   assert.equal(created.status, 201, created.text);
   listing = created.json.listing;
@@ -59,49 +61,49 @@ after(async () => {
   await server?.stop();
 });
 
-test('slots 1 to 5 are accepted and come back in order', async () => {
-  for (const slot of [1, 2, 3, 4, 5]) {
+test('slots 1 to 20 are accepted and come back in order', async () => {
+  for (const slot of range(1, 20)) {
     const res = await upload(owner, listing.id, slot);
     assert.equal(res.status, 200, `slot ${slot}: ${res.text}`);
   }
   const mine = await owner('/api/listings?mine=1');
   const found = mine.json.listings.find((item) => item.id === listing.id);
-  assert.deepEqual(found.photos.map((photo) => photo.slot), [1, 2, 3, 4, 5]);
+  assert.deepEqual(found.photos.map((photo) => photo.slot), range(1, 20));
 });
 
-test('slot 6 and slot 0 are refused with 400 and field slot', async () => {
-  for (const slot of [6, 0]) {
+test('slot 21 and slot 0 are refused with 400 and field slot', async () => {
+  for (const slot of [21, 0]) {
     const res = await upload(owner, listing.id, slot);
     assert.equal(res.status, 400, `slot ${slot}`);
     assert.equal(res.json.field, 'slot');
   }
-  const remove = await owner(`/api/listings/${listing.id}/photos/6`, { method: 'DELETE' });
+  const remove = await owner(`/api/listings/${listing.id}/photos/21`, { method: 'DELETE' });
   assert.equal(remove.status, 400);
 });
 
-test('slot 5 can be removed', async () => {
-  const remove = await owner(`/api/listings/${listing.id}/photos/5`, { method: 'DELETE' });
+test('slot 20 can be removed', async () => {
+  const remove = await owner(`/api/listings/${listing.id}/photos/20`, { method: 'DELETE' });
   assert.equal(remove.status, 200, remove.text);
 });
 
 test('another seller gets 404 and a buyer gets 403', async () => {
-  assert.equal((await upload(other, listing.id, 5)).status, 404);
-  assert.equal((await upload(buyer, listing.id, 5)).status, 403);
+  assert.equal((await upload(other, listing.id, 20)).status, 404);
+  assert.equal((await upload(buyer, listing.id, 20)).status, 403);
   const remove = await other(`/api/listings/${listing.id}/photos/1`, { method: 'DELETE' });
   assert.equal(remove.status, 404);
 });
 
-test('the database itself refuses position 6', async () => {
+test('the database itself refuses position 21', async () => {
   const db = new pg.Client({ connectionString: TEST_DATABASE_URL });
   await db.connect();
   try {
-    await db.query('insert into media (slug, mime, bytes) values ($1, $2, $3)', ['listing-slot6test', 'image/jpeg', Buffer.from(JPEG)]);
+    await db.query('insert into media (slug, mime, bytes) values ($1, $2, $3)', ['listing-slot21test', 'image/jpeg', Buffer.from(JPEG)]);
     await assert.rejects(
-      db.query('insert into listing_photos (listing_id, media_slug, position) values ($1, $2, 6)', [listing.id, 'listing-slot6test']),
+      db.query('insert into listing_photos (listing_id, media_slug, position) values ($1, $2, 21)', [listing.id, 'listing-slot21test']),
       /check constraint/,
     );
   } finally {
-    await db.query("delete from media where slug = 'listing-slot6test'");
+    await db.query("delete from media where slug = 'listing-slot21test'");
     await db.end();
   }
 });
