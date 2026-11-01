@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 
-const SLIDES = ['casa1', 'casa2', 'casa3', 'rest1'];
+const SLIDES = [
+  // very wide, so a phone shows it far bigger than the screen's width and needs the large file
+  { name: 'casa1', width: 1920, sizes: 'max(100vw, 218vh)' },
+  { name: 'casasigmasol', width: 1495, sizes: '100vw' },
+  { name: 'casa2', width: 1920, sizes: '100vw' },
+  { name: 'casa3', width: 1920, sizes: '100vw' },
+  { name: 'rest1', width: 1920, sizes: '100vw' },
+];
 /** How long each photo stays on the landing page (the owner, 31 Oct). */
 export const SLIDE_MS = 5000;
 
@@ -25,13 +32,13 @@ export function HomeSlides() {
 
   return (
     <div className="home-slides" aria-hidden="true" data-testid="home-slides">
-      {SLIDES.map((name, index) => (
+      {SLIDES.map(({ name, width, sizes }, index) => (
         <img
           key={name}
-          className={`home-slide ${index === showing ? 'is-on' : ''} ${index === leaving ? 'is-out' : ''}`}
+          className={`home-slide home-slide--${name} ${index === showing ? 'is-on' : ''} ${index === leaving ? 'is-out' : ''}`}
           src={url(`${name}.webp`)}
-          srcSet={`${url(`${name}-960.webp`)} 960w, ${url(`${name}.webp`)} 1920w`}
-          sizes="100vw"
+          srcSet={`${url(`${name}-960.webp`)} 960w, ${url(`${name}.webp`)} ${width}w`}
+          sizes={sizes}
           alt=""
           decoding="async"
         />
