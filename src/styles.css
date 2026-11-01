@@ -3553,6 +3553,11 @@ a.topbar__name:hover {
   transform: translateX(-100%);
 }
 
+/* a tall photo: the sun's glow at the top, the buildings and boats below */
+.home-slide--casasigmasol {
+  object-position: center 30%;
+}
+
 .home-slide.is-on {
   transform: translateX(0);
   transition: transform 0.9s ease-in-out;

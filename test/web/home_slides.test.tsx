@@ -27,9 +27,9 @@ describe('the landing photos', () => {
     expect(screen.getByTestId('home-slides').querySelector('.is-out')).toBeNull();
   });
 
-  it('goes through all four and back to the first', () => {
+  it('goes through all five and back to the first', () => {
     render(<HomeSlides />);
-    for (const [on, out] of [['casa2', 'casa1'], ['casa3', 'casa2'], ['rest1', 'casa3'], ['casa1', 'rest1']]) {
+    for (const [on, out] of [['casasigmasol', 'casa1'], ['casa2', 'casasigmasol'], ['casa3', 'casa2'], ['rest1', 'casa3'], ['casa1', 'rest1']]) {
       next();
       expect(slide(on).classList.contains('is-on')).toBe(true);
       expect(slide(out).classList.contains('is-out')).toBe(true);
